@@ -2285,6 +2285,8 @@ await loadDashboard()
       ================================================== */}
       {page === "home" && (
         <HomePage
+          plans={plans}
+          meals={publicTodayMeals}
           onSubscriptions={() =>
             setPage(
               "subscriptions"
@@ -2561,8 +2563,11 @@ function Header({
     <header className="header">
       <div className="brand">
         <div className="brand-icon">
-          🍲
-        </div>
+  <img
+    src="/images/logo.png"
+    alt="مطبخ شيف نور"
+  />
+</div>
         <div>
           <h1>
             مطبخ شيف نور
@@ -2638,54 +2643,192 @@ function Header({
 function HomePage({
   onSubscriptions,
   onDaily,
+  plans = [],
+  meals = [],
 }) {
+  const visibleMeals = (meals || []).filter(Boolean).slice(0, 3)
+  const featuredPlans = (plans || []).filter((plan) => plan.days === 26).slice(0, 3)
+
+  const homeStyles = `
+    .home-page { background:#fffaf5; color:#241b16; overflow:hidden; }
+    .home-hero { position:relative; min-height:650px; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:40px; padding:80px 7%; background:linear-gradient(135deg,#fffaf5 0%,#fff3e7 55%,#f7eadc 100%); }
+    .home-hero:before { content:""; position:absolute; width:430px; height:430px; border-radius:50%; background:rgba(180,112,54,.08); left:-150px; top:-160px; }
+    .home-copy { position:relative; z-index:2; max-width:650px; }
+    .home-badge { display:inline-flex; align-items:center; gap:8px; padding:9px 15px; border-radius:999px; background:#fff; border:1px solid #ead9c8; color:#9b5b2e; font-weight:800; font-size:14px; box-shadow:0 8px 24px rgba(72,45,25,.07); }
+    .home-copy h1 { margin:20px 0 14px; font-size:clamp(42px,5.5vw,76px); line-height:1.04; letter-spacing:-2px; font-weight:950; }
+    .home-copy h1 span { color:#a76031; }
+    .home-copy p { margin:0; max-width:580px; color:#6f625a; font-size:19px; line-height:1.9; }
+    .home-actions { display:flex; flex-wrap:wrap; gap:13px; margin-top:30px; }
+    .home-primary,.home-secondary { border:0; cursor:pointer; padding:15px 25px; border-radius:15px; font-size:16px; font-weight:900; transition:.2s; }
+    .home-primary { background:#a76031; color:#fff; box-shadow:0 12px 26px rgba(167,96,49,.25); }
+    .home-secondary { background:#fff; color:#714426; border:1px solid #dfc9b6; }
+    .home-primary:hover,.home-secondary:hover { transform:translateY(-2px); }
+    .home-trust { display:flex; flex-wrap:wrap; gap:18px; margin-top:27px; color:#6e6259; font-size:13px; font-weight:800; }
+    .home-visual { position:relative; min-height:510px; display:flex; align-items:center; justify-content:center; }
+    .home-image-wrap { width:min(460px,78vw); height:min(460px,78vw); border-radius:50%; padding:13px; background:#fff; box-shadow:0 30px 70px rgba(71,43,23,.18); }
+    .home-image { width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
+    .home-float { position:absolute; right:3%; bottom:35px; background:#fff; border:1px solid #eadbcf; border-radius:18px; padding:15px 18px; box-shadow:0 18px 35px rgba(54,34,20,.13); min-width:190px; }
+    .home-float strong { display:block; color:#8e522d; font-size:17px; margin-bottom:3px; }
+    .home-float span { color:#76675e; font-size:12px; }
+    .home-section { padding:78px 7%; }
+    .home-section.alt { background:#fff; }
+    .home-heading { text-align:center; max-width:700px; margin:0 auto 38px; }
+    .home-heading small { color:#a76031; font-weight:900; }
+    .home-heading h2 { margin:8px 0; font-size:clamp(28px,3vw,42px); }
+    .home-heading p { color:#776960; line-height:1.8; margin:0; }
+    .home-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; max-width:1150px; margin:auto; }
+    .meal-card { background:#fff; border:1px solid #eee1d5; border-radius:22px; overflow:hidden; box-shadow:0 10px 28px rgba(56,37,23,.07); }
+    .meal-photo { height:220px; background:#f1e4d8; overflow:hidden; }
+    .meal-photo img { width:100%; height:100%; object-fit:cover; display:block; }
+    .meal-placeholder { height:100%; display:flex; align-items:center; justify-content:center; font-size:72px; }
+    .meal-body { padding:18px; }
+    .meal-body h3 { margin:0 0 7px; font-size:20px; }
+    .meal-body p { margin:0 0 14px; color:#796c63; min-height:44px; line-height:1.6; font-size:13px; }
+    .meal-bottom { display:flex; justify-content:space-between; align-items:center; }
+    .meal-price { color:#a76031; font-weight:950; }
+    .home-empty { grid-column:1/-1; text-align:center; padding:35px; color:#766a62; background:#fff; border:1px dashed #dfcbbb; border-radius:18px; }
+    .plan-card { background:#fff; border:1px solid #eaded3; border-radius:22px; padding:25px; position:relative; box-shadow:0 10px 28px rgba(56,37,23,.06); }
+    .plan-card.featured { border:2px solid #b77546; transform:translateY(-4px); }
+    .plan-badge { position:absolute; top:15px; left:15px; background:#a76031; color:#fff; border-radius:999px; padding:6px 10px; font-size:11px; font-weight:900; }
+    .plan-card h3 { margin:0 0 5px; font-size:22px; }
+    .plan-price { font-size:34px; font-weight:950; color:#a76031; margin:15px 0; }
+    .plan-price small { font-size:13px; color:#82756c; font-weight:700; }
+    .plan-meta { display:grid; gap:10px; margin:18px 0; color:#675a52; font-size:14px; }
+    .plan-card button { width:100%; border:0; border-radius:13px; padding:13px; background:#2f241e; color:#fff; cursor:pointer; font-weight:900; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; max-width:1150px; margin:auto; }
+    .stat { background:#fffaf5; border:1px solid #eaded3; border-radius:20px; padding:25px 18px; text-align:center; }
+    .stat strong { display:block; font-size:27px; color:#a76031; margin-bottom:6px; }
+    .stat span { color:#71655d; font-size:13px; line-height:1.5; }
+    .story { max-width:1100px; margin:auto; display:grid; grid-template-columns:.85fr 1.15fr; gap:45px; align-items:center; }
+    .story-image { height:390px; border-radius:28px; overflow:hidden; box-shadow:0 20px 45px rgba(52,33,20,.13); }
+    .story-image img { width:100%; height:100%; object-fit:cover; }
+    .story-copy small { color:#a76031; font-weight:900; }
+    .story-copy h2 { font-size:40px; margin:8px 0 15px; }
+    .story-copy p { color:#71645b; line-height:2; font-size:16px; }
+    .home-cta { margin:20px 7% 70px; padding:55px 35px; text-align:center; border-radius:30px; background:linear-gradient(135deg,#2f241e,#5a3b2b); color:#fff; }
+    .home-cta h2 { margin:0 0 10px; font-size:clamp(28px,4vw,45px); }
+    .home-cta p { color:#e8d9ce; margin:0 auto 24px; max-width:650px; line-height:1.8; }
+    .home-cta button { border:0; border-radius:14px; background:#fff; color:#704226; padding:14px 28px; font-weight:950; cursor:pointer; }
+    .home-footer { padding:28px 7%; border-top:1px solid #eaded3; background:#fff; display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; color:#75685f; font-size:13px; }
+    .home-footer strong { color:#8e522d; }
+    @media (max-width:900px){ .home-hero,.story{grid-template-columns:1fr}.home-hero{padding-top:55px}.home-visual{min-height:430px}.home-grid{grid-template-columns:1fr 1fr}.stats{grid-template-columns:1fr 1fr}.story-image{height:320px} }
+    @media (max-width:600px){ .home-copy h1{letter-spacing:-1px}.home-grid,.stats{grid-template-columns:1fr}.home-section{padding:58px 5%}.home-hero{padding:48px 5%}.home-visual{min-height:360px}.home-image-wrap{width:310px;height:310px}.home-float{right:0;bottom:5px}.story-copy h2{font-size:32px}.home-cta{margin:10px 5% 45px;padding:40px 20px}.home-footer{padding:24px 5%} }
+  `
+
   return (
-    <section className="hero">
-      <div className="hero-content">
-        <div className="welcome">
-          أهلاً وسهلاً بكم ❤️
+    <div className="home-page">
+      <style>{homeStyles}</style>
+
+      <section className="home-hero">
+        <div className="home-copy">
+          <span className="home-badge">🍲 أكل بيتي يُحضّر بحب كل يوم</span>
+          <h1>طعم البيت...<br /><span>على سفرتك</span></h1>
+          <p>وجبات منزلية طازجة من مطبخ شيف نور، نختار مكوناتها بعناية ونحضّرها يومياً لتوصلك بطعم البيت الحقيقي.</p>
+          <div className="home-actions">
+            <button className="home-primary" onClick={onSubscriptions}>ابدأ اشتراكك الآن</button>
+            <button className="home-secondary" onClick={onDaily}>🍲 شاهد وجبات اليوم</button>
+          </div>
+          <div className="home-trust">
+            <span>✓ طبخ يومي طازج</span>
+            <span>✓ توصيل مع الاشتراك</span>
+            <span>✓ خيارات تناسبك</span>
+          </div>
         </div>
-        <h2>
-          طبخ بيتي
-          <br />
-          <strong>
-            بطعم يحبّه الجميع
-          </strong>
-        </h2>
-        <p>
-          في مطبخ شيف نور نحضّر
-          لكم وجبات منزلية طازجة
-          كل يوم، بعناية وحب.
-        </p>
-        <div className="hero-buttons">
-          <button
-            className="main-btn"
-            onClick={
-              onSubscriptions
-            }
-          >
-            📅 اشترك معنا
-          </button>
-          <button
-            className="outline-btn"
-            onClick={onDaily}
-          >
-            🍲 وجبات اليوم
-          </button>
+        <div className="home-visual">
+          <div className="home-image-wrap">
+            <img className="home-image" src="/images/hero-food.jpg" alt="وجبات مطبخ شيف نور" />
+          </div>
+          <div className="home-float">
+            <strong>Chef Noor</strong>
+            <span>طبخ بيتي بطعم يستاهل التجربة ❤️</span>
+          </div>
         </div>
-      </div>
-      <div className="hero-food">
-        <div className="food-circle">
-          <span>🍲</span>
-          <h3>
-            Chef Noor
-          </h3>
-          <p>
-            طبخ بحب ❤️
-          </p>
+      </section>
+
+      <section className="home-section">
+        <div className="home-heading">
+          <small>ماذا لدينا اليوم؟</small>
+          <h2>وجبات اليوم</h2>
+          <p>تشكيلة يومية تتغير باستمرار، لتجد دائماً شيئاً تحبه.</p>
         </div>
-      </div>
-    </section>
+        <div className="home-grid">
+          {visibleMeals.length ? visibleMeals.map((meal) => (
+            <article className="meal-card" key={meal.id || meal.name}>
+              <div className="meal-photo">
+                {meal.image_url ? <img src={meal.image_url} alt={meal.name} /> : <div className="meal-placeholder">🍲</div>}
+              </div>
+              <div className="meal-body">
+                <h3>{meal.name}</h3>
+                <p>{meal.description || "وجبة منزلية طازجة محضّرة بعناية."}</p>
+                <div className="meal-bottom">
+                  <span className="meal-price">{meal.price || DAILY_PRICE} د.أ</span>
+                  <button className="home-secondary" style={{padding:"9px 13px"}} onClick={onDaily}>التفاصيل</button>
+                </div>
+              </div>
+            </article>
+          )) : <div className="home-empty">سيتم عرض وجبات اليوم هنا بمجرد نشر قائمة اليوم.</div>}
+        </div>
+      </section>
+
+      <section className="home-section alt">
+        <div className="home-heading">
+          <small>اشترك وارتاح</small>
+          <h2>باقات اشتراك مرنة</h2>
+          <p>اختر عدد الأيام وعدد الوجبات التي تناسبك، والتوصيل مشمول ضمن الاشتراك.</p>
+        </div>
+        <div className="home-grid">
+          {featuredPlans.length ? featuredPlans.map((plan, index) => (
+            <article className={`plan-card ${index === 1 ? "featured" : ""}`} key={plan.id || `${plan.days}-${plan.meals_count}`}>
+              {index === 1 && <span className="plan-badge">الأكثر طلباً</span>}
+              <h3>{plan.meals_count} وجبة يومياً</h3>
+              <div className="plan-price">{plan.price} <small>د.أ / {plan.days} يوم</small></div>
+              <div className="plan-meta">
+                <span>✓ {plan.days} يوم اشتراك</span>
+                <span>✓ توصيل شامل</span>
+                <span>✓ اختيار الوجبات حسب القائمة</span>
+              </div>
+              <button onClick={onSubscriptions}>اختيار الباقة</button>
+            </article>
+          )) : <div className="home-empty">باقات الاشتراك متاحة من صفحة الاشتراكات.</div>}
+        </div>
+      </section>
+
+      <section className="home-section">
+        <div className="home-heading">
+          <small>لماذا شيف نور؟</small>
+          <h2>نظام بسيط... وطعم يُعتمد عليه</h2>
+        </div>
+        <div className="stats">
+          <div className="stat"><strong>20 / 26</strong><span>خيارات اشتراك مرنة تناسب احتياجك</span></div>
+          <div className="stat"><strong>3</strong><span>وجبات يومية يمكن اختيارها حسب الباقة</span></div>
+          <div className="stat"><strong>4:00 م</strong><span>موعد إغلاق الطلبات اليومية</span></div>
+          <div className="stat"><strong>100%</strong><span>اهتمام بالطعم والنظافة وجودة التحضير</span></div>
+        </div>
+      </section>
+
+      <section className="home-section alt">
+        <div className="story">
+          <div className="story-image"><img src="/images/hero-food.jpg" alt="من مطبخ شيف نور" /></div>
+          <div className="story-copy">
+            <small>من مطبخ شيف نور</small>
+            <h2>أكل يشبه أكل البيت</h2>
+            <p>الفكرة بسيطة: وجبة طيبة، مكونات واضحة، وتحضير يومي باهتمام. نريد أن تكون تجربة مطبخ شيف نور قريبة من البيت، لكن أسهل عليك في الطلب والمتابعة والتوصيل.</p>
+            <button className="home-primary" onClick={onSubscriptions}>تعرّف على الاشتراكات</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="home-cta">
+        <h2>خلي وجبتك علينا ❤️</h2>
+        <p>إذا كنت تبحث عن طبخ بيتي يومي بدون وجع رأس، اختر وجبتك أو اشترك بالباقة المناسبة لك.</p>
+        <button onClick={onSubscriptions}>ابدأ الآن</button>
+      </section>
+
+      <footer className="home-footer">
+        <span><strong>Chef Noor Cuisine</strong> — طبخ بيتي بحب</span>
+        <span>وجبات يومية • اشتراكات • توصيل</span>
+      </footer>
+    </div>
   )
 }
 /* ======================================================
