@@ -2565,7 +2565,7 @@ function Header({
         <div className="brand-icon">
   <img
     src="/images/logo.png"
-    alt="مطبخ شيف نور"
+    alt="Chef Noor Cuisine"
   />
 </div>
         <div>
