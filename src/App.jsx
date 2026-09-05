@@ -1,7 +1,8 @@
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import "./App.css"
 import { supabase } from "./supabase"
+import { brandImages, mealFallbackImage } from "./brandMedia"
 const plans = [
   { id: 1, days: 26, meals: 1, price: 90 },
   { id: 2, days: 26, meals: 2, price: 165 },
@@ -397,6 +398,86 @@ function SubscriberPage({
                   const quantity = Number(
                     selectedMeals[meal.id] || 0
                   )
+                  const addToCart = (meal, quantity = 1) => {
+  if (!meal) return
+
+  const price = Number(meal.price || DAILY_PRICE)
+
+  setCart((currentCart) => {
+    const existing = currentCart.find(
+      (item) => String(item.meal_id) === String(meal.id)
+    )
+
+    if (existing) {
+      return currentCart.map((item) =>
+        String(item.meal_id) === String(meal.id)
+          ? {
+              ...item,
+              quantity: item.quantity + quantity,
+              total: (item.quantity + quantity) * item.price,
+            }
+          : item
+      )
+    }
+
+    return [
+      ...currentCart,
+      {
+        meal_id: meal.id,
+        meal_name: meal.name,
+        price,
+        quantity,
+        total: price * quantity,
+        image: meal.image_url || meal.image || mealFallbackImage,
+      },
+    ]
+  })
+
+  setDailyOrderOpen(false)
+}
+
+const updateCartQuantity = (mealId, quantity) => {
+  const newQuantity = Number(quantity)
+
+  if (newQuantity <= 0) {
+    removeFromCart(mealId)
+    return
+  }
+
+  setCart((currentCart) =>
+    currentCart.map((item) =>
+      String(item.meal_id) === String(mealId)
+        ? {
+            ...item,
+            quantity: newQuantity,
+            total: newQuantity * item.price,
+          }
+        : item
+    )
+  )
+}
+
+const removeFromCart = (mealId) => {
+  setCart((currentCart) =>
+    currentCart.filter(
+      (item) => String(item.meal_id) !== String(mealId)
+    )
+  )
+}
+
+const clearCart = () => {
+  setCart([])
+}
+
+const cartItemsCount = cart.reduce(
+  (sum, item) => sum + Number(item.quantity || 0),
+  0
+)
+
+const cartSubtotal = cart.reduce(
+  (sum, item) => sum + Number(item.total || 0),
+  0
+)
                   return (
                     <div
                       key={meal.id}
@@ -670,6 +751,17 @@ const loginAdmin = async (email, password) => {
     useState(null)
   const [dailySaving, setDailySaving] =
     useState(false)
+    const [cart, setCart] = useState([])
+const [cartOpen, setCartOpen] = useState(false)
+const cartItemsCount = cart.reduce(
+  (sum, item) => sum + Number(item.quantity || 0),
+  0
+)
+
+const cartSubtotal = cart.reduce(
+  (sum, item) => sum + Number(item.total || 0),
+  0
+)
   const [ordersClosed, setOrdersClosed] =
     useState(false)
   /* ======================================================
@@ -2272,6 +2364,8 @@ await loadDashboard()
   page={page}
   setPage={setPage}
   profile={profile}
+  cartItemsCount={cartItemsCount}
+onOpenCart={() => setCartOpen(true)}
 />
 {page === "subscriber" && (
   <SubscriberPage
@@ -2336,6 +2430,7 @@ await loadDashboard()
       ================================================== */}
       {page === "daily" && (
         <DailyPage
+        
           meals={publicTodayMeals}
           menuDate={publicTodayMenuDate}
           menuIsFallback={publicTodayMenuIsFallback}
@@ -2345,6 +2440,7 @@ await loadDashboard()
           onOrder={
             openDailyOrder
           }
+          onAddToCart={addToCart}
         />
       )}
       {/* ==================================================
@@ -2465,18 +2561,47 @@ await loadDashboard()
           }
         />
       )}
+      {cartOpen && (
+  <CartPopup
+    cart={cart}
+    subtotal={cartSubtotal}
+    onClose={() => setCartOpen(false)}
+    onUpdateQuantity={updateCartQuantity}
+    onRemove={removeFromCart}
+    onClear={clearCart}
+    onCheckout={() => {
+      setCartOpen(false)
+      setDailyOrderOpen(true)
+    }}
+  />
+)}
       {/* ==================================================
           FOOTER
       ================================================== */}
-      <footer>
-        <h2>
-          مطبخ شيف نور
-        </h2>
-        <p>
-          Chef Noor Cuisine
-        </p>
-        <p>
-          © 2026 جميع الحقوق محفوظة
+      <footer className="brand-footer">
+        <div className="brand-footer-top">
+          <div className="brand-footer-identity">
+            <span className="brand-footer-handle">@chefnoorcuisine</span>
+            <h2>مطبخ شيف نور</h2>
+            <p>أكل البيت... بطابع براند عالمي</p>
+          </div>
+          <div className="brand-footer-social">
+            <span>Instagram</span>
+            <span>WhatsApp</span>
+            <span>TikTok</span>
+          </div>
+        </div>
+        <div className="brand-footer-grid">
+          {brandImages.meals.map((src, index) => (
+            <img
+              key={src}
+              src={src}
+              alt={`طبق من مطبخ شيف نور ${index + 1}`}
+            />
+          ))}
+        </div>
+        <p className="brand-footer-copy">
+          © 2026 Chef Noor Cuisine — جميع الحقوق محفوظة
         </p>
       </footer>
     </div>
@@ -2558,6 +2683,8 @@ function Header({
   page,
   setPage,
   profile,
+  cartItemsCount,
+onOpenCart,
 }) {
   return (
     <header className="header">
@@ -2633,10 +2760,79 @@ function Header({
     🚪 خروج
   </button>
 )}
+<button
+  className="cart-button"
+  onClick={onOpenCart}
+  aria-label="فتح السلة"
+>
+  🛒
+  {cartItemsCount > 0 && (
+    <span className="cart-count">
+      {cartItemsCount}
+    </span>
+  )}
+</button>
       </nav>
     </header>
   )
 }
+function useInView(threshold = 0.16) {
+  const ref = useRef(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { threshold }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [threshold])
+  return [ref, visible]
+}
+
+function Reveal({ className = "", children, as: Tag = "div" }) {
+  const [ref, visible] = useInView()
+  return (
+    <Tag
+      ref={ref}
+      className={`reveal ${visible ? "is-visible" : ""} ${className}`.trim()}
+    >
+      {children}
+    </Tag>
+  )
+}
+
+function AnimatedCounter({ end, suffix = "", duration = 1400 }) {
+  const [ref, visible] = useInView(0.4)
+  const [value, setValue] = useState(0)
+  useEffect(() => {
+    if (!visible) return
+    const start = performance.now()
+    let frame
+    const tick = (now) => {
+      const progress = Math.min((now - start) / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setValue(Math.round(end * eased))
+      if (progress < 1) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [visible, end, duration])
+  return (
+    <strong ref={ref} className="stat-count">
+      {value}
+      {suffix}
+    </strong>
+  )
+}
+
 /* ======================================================
    HOME
 ====================================================== */
@@ -2646,141 +2842,90 @@ function HomePage({
   plans = [],
   meals = [],
 }) {
-  const visibleMeals = (meals || []).filter(Boolean).slice(0, 3)
+  const visibleMeals = (meals || []).filter(Boolean).slice(0, 6)
   const featuredPlans = (plans || []).filter((plan) => plan.days === 26).slice(0, 3)
-
-  const homeStyles = `
-    .home-page { background:#fffaf5; color:#241b16; overflow:hidden; }
-    .home-hero { position:relative; min-height:650px; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:40px; padding:80px 7%; background:linear-gradient(135deg,#fffaf5 0%,#fff3e7 55%,#f7eadc 100%); }
-    .home-hero:before { content:""; position:absolute; width:430px; height:430px; border-radius:50%; background:rgba(180,112,54,.08); left:-150px; top:-160px; }
-    .home-copy { position:relative; z-index:2; max-width:650px; }
-    .home-badge { display:inline-flex; align-items:center; gap:8px; padding:9px 15px; border-radius:999px; background:#fff; border:1px solid #ead9c8; color:#9b5b2e; font-weight:800; font-size:14px; box-shadow:0 8px 24px rgba(72,45,25,.07); }
-    .home-copy h1 { margin:20px 0 14px; font-size:clamp(42px,5.5vw,76px); line-height:1.04; letter-spacing:-2px; font-weight:950; }
-    .home-copy h1 span { color:#a76031; }
-    .home-copy p { margin:0; max-width:580px; color:#6f625a; font-size:19px; line-height:1.9; }
-    .home-actions { display:flex; flex-wrap:wrap; gap:13px; margin-top:30px; }
-    .home-primary,.home-secondary { border:0; cursor:pointer; padding:15px 25px; border-radius:15px; font-size:16px; font-weight:900; transition:.2s; }
-    .home-primary { background:#a76031; color:#fff; box-shadow:0 12px 26px rgba(167,96,49,.25); }
-    .home-secondary { background:#fff; color:#714426; border:1px solid #dfc9b6; }
-    .home-primary:hover,.home-secondary:hover { transform:translateY(-2px); }
-    .home-trust { display:flex; flex-wrap:wrap; gap:18px; margin-top:27px; color:#6e6259; font-size:13px; font-weight:800; }
-    .home-visual { position:relative; min-height:510px; display:flex; align-items:center; justify-content:center; }
-    .home-image-wrap { width:min(460px,78vw); height:min(460px,78vw); border-radius:50%; padding:13px; background:#fff; box-shadow:0 30px 70px rgba(71,43,23,.18); }
-    .home-image { width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
-    .home-float { position:absolute; right:3%; bottom:35px; background:#fff; border:1px solid #eadbcf; border-radius:18px; padding:15px 18px; box-shadow:0 18px 35px rgba(54,34,20,.13); min-width:190px; }
-    .home-float strong { display:block; color:#8e522d; font-size:17px; margin-bottom:3px; }
-    .home-float span { color:#76675e; font-size:12px; }
-    .home-section { padding:78px 7%; }
-    .home-section.alt { background:#fff; }
-    .home-heading { text-align:center; max-width:700px; margin:0 auto 38px; }
-    .home-heading small { color:#a76031; font-weight:900; }
-    .home-heading h2 { margin:8px 0; font-size:clamp(28px,3vw,42px); }
-    .home-heading p { color:#776960; line-height:1.8; margin:0; }
-    .home-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; max-width:1150px; margin:auto; }
-    .meal-card { background:#fff; border:1px solid #eee1d5; border-radius:22px; overflow:hidden; box-shadow:0 10px 28px rgba(56,37,23,.07); }
-    .meal-photo { height:220px; background:#f1e4d8; overflow:hidden; }
-    .meal-photo img { width:100%; height:100%; object-fit:cover; display:block; }
-    .meal-placeholder { height:100%; display:flex; align-items:center; justify-content:center; font-size:72px; }
-    .meal-body { padding:18px; }
-    .meal-body h3 { margin:0 0 7px; font-size:20px; }
-    .meal-body p { margin:0 0 14px; color:#796c63; min-height:44px; line-height:1.6; font-size:13px; }
-    .meal-bottom { display:flex; justify-content:space-between; align-items:center; }
-    .meal-price { color:#a76031; font-weight:950; }
-    .home-empty { grid-column:1/-1; text-align:center; padding:35px; color:#766a62; background:#fff; border:1px dashed #dfcbbb; border-radius:18px; }
-    .plan-card { background:#fff; border:1px solid #eaded3; border-radius:22px; padding:25px; position:relative; box-shadow:0 10px 28px rgba(56,37,23,.06); }
-    .plan-card.featured { border:2px solid #b77546; transform:translateY(-4px); }
-    .plan-badge { position:absolute; top:15px; left:15px; background:#a76031; color:#fff; border-radius:999px; padding:6px 10px; font-size:11px; font-weight:900; }
-    .plan-card h3 { margin:0 0 5px; font-size:22px; }
-    .plan-price { font-size:34px; font-weight:950; color:#a76031; margin:15px 0; }
-    .plan-price small { font-size:13px; color:#82756c; font-weight:700; }
-    .plan-meta { display:grid; gap:10px; margin:18px 0; color:#675a52; font-size:14px; }
-    .plan-card button { width:100%; border:0; border-radius:13px; padding:13px; background:#2f241e; color:#fff; cursor:pointer; font-weight:900; }
-    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; max-width:1150px; margin:auto; }
-    .stat { background:#fffaf5; border:1px solid #eaded3; border-radius:20px; padding:25px 18px; text-align:center; }
-    .stat strong { display:block; font-size:27px; color:#a76031; margin-bottom:6px; }
-    .stat span { color:#71655d; font-size:13px; line-height:1.5; }
-    .story { max-width:1100px; margin:auto; display:grid; grid-template-columns:.85fr 1.15fr; gap:45px; align-items:center; }
-    .story-image { height:390px; border-radius:28px; overflow:hidden; box-shadow:0 20px 45px rgba(52,33,20,.13); }
-    .story-image img { width:100%; height:100%; object-fit:cover; }
-    .story-copy small { color:#a76031; font-weight:900; }
-    .story-copy h2 { font-size:40px; margin:8px 0 15px; }
-    .story-copy p { color:#71645b; line-height:2; font-size:16px; }
-    .home-cta { margin:20px 7% 70px; padding:55px 35px; text-align:center; border-radius:30px; background:linear-gradient(135deg,#2f241e,#5a3b2b); color:#fff; }
-    .home-cta h2 { margin:0 0 10px; font-size:clamp(28px,4vw,45px); }
-    .home-cta p { color:#e8d9ce; margin:0 auto 24px; max-width:650px; line-height:1.8; }
-    .home-cta button { border:0; border-radius:14px; background:#fff; color:#704226; padding:14px 28px; font-weight:950; cursor:pointer; }
-    .home-footer { padding:28px 7%; border-top:1px solid #eaded3; background:#fff; display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; color:#75685f; font-size:13px; }
-    .home-footer strong { color:#8e522d; }
-    @media (max-width:900px){ .home-hero,.story{grid-template-columns:1fr}.home-hero{padding-top:55px}.home-visual{min-height:430px}.home-grid{grid-template-columns:1fr 1fr}.stats{grid-template-columns:1fr 1fr}.story-image{height:320px} }
-    @media (max-width:600px){ .home-copy h1{letter-spacing:-1px}.home-grid,.stats{grid-template-columns:1fr}.home-section{padding:58px 5%}.home-hero{padding:48px 5%}.home-visual{min-height:360px}.home-image-wrap{width:310px;height:310px}.home-float{right:0;bottom:5px}.story-copy h2{font-size:32px}.home-cta{margin:10px 5% 45px;padding:40px 20px}.home-footer{padding:24px 5%} }
-  `
 
   return (
     <div className="home-page">
-      <style>{homeStyles}</style>
-
-      <section className="home-hero">
-        <div className="home-copy">
-          <span className="home-badge">🍲 أكل بيتي يُحضّر بحب كل يوم</span>
-          <h1>طعم البيت...<br /><span>على سفرتك</span></h1>
-          <p>وجبات منزلية طازجة من مطبخ شيف نور، نختار مكوناتها بعناية ونحضّرها يومياً لتوصلك بطعم البيت الحقيقي.</p>
+      <section className="brand-hero">
+        <img
+          className="brand-hero-photo"
+          src={brandImages.hero}
+          alt="تصوير طعام من مطبخ شيف نور"
+        />
+        <div className="brand-hero-overlay">
+          <span className="home-badge">Chef Noor Cuisine</span>
+          <h1>أكلك اليوم... علينا</h1>
+          <p>
+            وجبات منزلية طازجة تُحضَّر يومياً، بمكونات واضحة وطعم البيت —
+            بتوصيل سلس واشتراك يناسب يومك.
+          </p>
           <div className="home-actions">
-            <button className="home-primary" onClick={onSubscriptions}>ابدأ اشتراكك الآن</button>
-            <button className="home-secondary" onClick={onDaily}>🍲 شاهد وجبات اليوم</button>
-          </div>
-          <div className="home-trust">
-            <span>✓ طبخ يومي طازج</span>
-            <span>✓ توصيل مع الاشتراك</span>
-            <span>✓ خيارات تناسبك</span>
+            <button className="home-secondary" onClick={onDaily}>
+              شاهد وجبات اليوم
+            </button>
           </div>
         </div>
-        <div className="home-visual">
-          <div className="home-image-wrap">
-            <img className="home-image" src="/images/hero-food.jpg" alt="وجبات مطبخ شيف نور" />
-          </div>
-          <div className="home-float">
-            <strong>Chef Noor</strong>
-            <span>طبخ بيتي بطعم يستاهل التجربة ❤️</span>
-          </div>
+        <button className="hero-float-cta" onClick={onSubscriptions}>
+          ابدأ اشتراكك
+        </button>
+        <div className="hero-float-badges">
+          <span>طبخ يومي</span>
+          <span>مكونات طازجة</span>
+          <span>توصيل يومي</span>
+        </div>
+        <div className="hero-circle">
+          <img src={brandImages.circle} alt="طبق اليوم" />
         </div>
       </section>
 
-      <section className="home-section">
+      <Reveal as="section" className="home-section meals-overlap">
         <div className="home-heading">
-          <small>ماذا لدينا اليوم؟</small>
+          <small>من السفرة إلى العدسة</small>
           <h2>وجبات اليوم</h2>
-          <p>تشكيلة يومية تتغير باستمرار، لتجد دائماً شيئاً تحبه.</p>
+          <p>بطاقات طعام غير متماثلة… مثل ستوري إنستغرام، لا شبكة مملّة.</p>
         </div>
-        <div className="home-grid">
-          {visibleMeals.length ? visibleMeals.map((meal) => (
-            <article className="meal-card" key={meal.id || meal.name}>
+        <div className="meals-masonry">
+          {visibleMeals.length ? visibleMeals.map((meal, index) => (
+            <article
+              className={`meal-card meal-card-${index % 3 === 0 ? "lg" : index % 3 === 1 ? "md" : "sm"}`}
+              key={meal.id || meal.name}
+            >
               <div className="meal-photo">
-                {meal.image_url ? <img src={meal.image_url} alt={meal.name} /> : <div className="meal-placeholder">🍲</div>}
+                <img
+                  src={meal.image_url || mealFallbackImage(index)}
+                  alt={meal.name}
+                />
               </div>
               <div className="meal-body">
                 <h3>{meal.name}</h3>
                 <p>{meal.description || "وجبة منزلية طازجة محضّرة بعناية."}</p>
                 <div className="meal-bottom">
                   <span className="meal-price">{meal.price || DAILY_PRICE} د.أ</span>
-                  <button className="home-secondary" style={{padding:"9px 13px"}} onClick={onDaily}>التفاصيل</button>
+                  <button className="home-secondary" onClick={onDaily}>التفاصيل</button>
                 </div>
               </div>
             </article>
-          )) : <div className="home-empty">سيتم عرض وجبات اليوم هنا بمجرد نشر قائمة اليوم.</div>}
+          )) : (
+            <div className="home-empty">سيتم عرض وجبات اليوم هنا بمجرد نشر قائمة اليوم.</div>
+          )}
         </div>
-      </section>
+      </Reveal>
 
-      <section className="home-section alt">
+      <Reveal as="section" className="home-section alt">
         <div className="home-heading">
           <small>اشترك وارتاح</small>
-          <h2>باقات اشتراك مرنة</h2>
+          <h2>باقات تبرز الأفضل</h2>
           <p>اختر عدد الأيام وعدد الوجبات التي تناسبك، والتوصيل مشمول ضمن الاشتراك.</p>
         </div>
-        <div className="home-grid">
+        <div className="home-plans">
           {featuredPlans.length ? featuredPlans.map((plan, index) => (
-            <article className={`plan-card ${index === 1 ? "featured" : ""}`} key={plan.id || `${plan.days}-${plan.meals_count}`}>
+            <article
+              className={`plan-card ${index === 1 ? "featured" : ""}`}
+              key={plan.id || `${plan.days}-${plan.meals}`}
+            >
               {index === 1 && <span className="plan-badge">الأكثر طلباً</span>}
-              <h3>{plan.meals_count} وجبة يومياً</h3>
+              <h3>{plan.meals} وجبة يومياً</h3>
               <div className="plan-price">{plan.price} <small>د.أ / {plan.days} يوم</small></div>
               <div className="plan-meta">
                 <span>✓ {plan.days} يوم اشتراك</span>
@@ -2791,43 +2936,61 @@ function HomePage({
             </article>
           )) : <div className="home-empty">باقات الاشتراك متاحة من صفحة الاشتراكات.</div>}
         </div>
-      </section>
+      </Reveal>
 
-      <section className="home-section">
+      <Reveal as="section" className="home-section">
         <div className="home-heading">
-          <small>لماذا شيف نور؟</small>
+          <small>أرقام المطبخ</small>
           <h2>نظام بسيط... وطعم يُعتمد عليه</h2>
         </div>
         <div className="stats">
-          <div className="stat"><strong>20 / 26</strong><span>خيارات اشتراك مرنة تناسب احتياجك</span></div>
-          <div className="stat"><strong>3</strong><span>وجبات يومية يمكن اختيارها حسب الباقة</span></div>
-          <div className="stat"><strong>4:00 م</strong><span>موعد إغلاق الطلبات اليومية</span></div>
-          <div className="stat"><strong>100%</strong><span>اهتمام بالطعم والنظافة وجودة التحضير</span></div>
-        </div>
-      </section>
-
-      <section className="home-section alt">
-        <div className="story">
-          <div className="story-image"><img src="/images/hero-food.jpg" alt="من مطبخ شيف نور" /></div>
-          <div className="story-copy">
-            <small>من مطبخ شيف نور</small>
-            <h2>أكل يشبه أكل البيت</h2>
-            <p>الفكرة بسيطة: وجبة طيبة، مكونات واضحة، وتحضير يومي باهتمام. نريد أن تكون تجربة مطبخ شيف نور قريبة من البيت، لكن أسهل عليك في الطلب والمتابعة والتوصيل.</p>
-            <button className="home-primary" onClick={onSubscriptions}>تعرّف على الاشتراكات</button>
+          <div className="stat">
+            <AnimatedCounter end={26} />
+            <span>يوم كحد أقصى للاشتراك المرن</span>
+          </div>
+          <div className="stat">
+            <AnimatedCounter end={3} />
+            <span>وجبات يومية حسب الباقة</span>
+          </div>
+          <div className="stat">
+            <AnimatedCounter end={4} suffix=":00" />
+            <span>موعد إغلاق الطلبات اليومية</span>
+          </div>
+          <div className="stat">
+            <AnimatedCounter end={100} suffix="%" />
+            <span>اهتمام بالطعم والنظافة والتحضير</span>
           </div>
         </div>
-      </section>
+      </Reveal>
 
-      <section className="home-cta">
-        <h2>خلي وجبتك علينا ❤️</h2>
-        <p>إذا كنت تبحث عن طبخ بيتي يومي بدون وجع رأس، اختر وجبتك أو اشترك بالباقة المناسبة لك.</p>
-        <button onClick={onSubscriptions}>ابدأ الآن</button>
-      </section>
+      <Reveal as="section" className="home-section alt story-section">
+        <div className="story">
+          <div className="story-image">
+            <img src={brandImages.story} alt="من مطبخ شيف نور" />
+          </div>
+          <div className="story-copy">
+            <small>Our Story</small>
+            <h2>قصتنا… أكل يشبه البيت</h2>
+            <p>
+              بدأت شيف نور من فكرة بسيطة: وجبة طيبة، مكونات واضحة، وتحضير يومي
+              باهتمام. نطبخ كما يُطبخ في البيت، ونقدّم التجربة بهوية براند عصرية —
+              سهلة الطلب، دافئة المذاق، وقريبة منك كل يوم.
+            </p>
+            <button className="home-primary" onClick={onSubscriptions}>
+              تعرّف على الاشتراكات
+            </button>
+          </div>
+        </div>
+      </Reveal>
 
-      <footer className="home-footer">
-        <span><strong>Chef Noor Cuisine</strong> — طبخ بيتي بحب</span>
-        <span>وجبات يومية • اشتراكات • توصيل</span>
-      </footer>
+      <Reveal as="section" className="home-cta">
+        <img src={brandImages.cta} alt="" className="home-cta-photo" />
+        <div className="home-cta-copy">
+          <h2>أكلك اليوم... علينا</h2>
+          <p>اشترك أو اطلب وجبة اليوم — والباقي على المطبخ.</p>
+          <button onClick={onSubscriptions}>ابدأ اشتراكك</button>
+        </div>
+      </Reveal>
     </div>
   )
 }
@@ -2839,7 +3002,7 @@ function SubscriptionsPage({
   onSelect,
 }) {
   return (
-    <section className="section">
+    <section className="section subscriptions-page">
       <div className="section-title">
         <small>
           اختر الباقة المناسبة لك
@@ -2898,6 +3061,7 @@ function SubscriptionPeriod({
    DAILY PAGE
 ====================================================== */
 function DailyPage({
+  onAddToCart,
   meals,
   menuDate,
   menuIsFallback,
@@ -2917,6 +3081,7 @@ function DailyPage({
     : ""
 
   return (
+    
     <section className="section daily-section">
       <div className="section-title">
         <small>
@@ -2926,6 +3091,12 @@ function DailyPage({
           🍲 وجبات اليوم
         </h2>
         <p>
+          <button
+  className="main-btn"
+  onClick={() => onAddToCart(meal)}
+>
+  🛒 أضف للسلة
+</button>
           {menuIsFallback
             ? `القائمة المنشورة القادمة — ${formattedMenuDate}`
             : formattedMenuDate
@@ -2940,84 +3111,63 @@ function DailyPage({
           اليوم.
         </div>
       ) : (
-        <div className="customers-grid">
+        <div className="daily-menu-track">
           {meals.map(
-            (meal) => (
+            (meal, index) => (
               <div
-                className="customer-card"
+                className="daily-meal-card"
                 key={meal.id}
               >
-                {meal.image_url ? (
+                <div className="daily-meal-photo">
                   <img
                     src={
-                      meal.image_url
+                      meal.image_url ||
+                      mealFallbackImage(index)
                     }
                     alt={
                       meal.name
                     }
-                    style={{
-                      width:
-                        "100%",
-                      height:
-                        "220px",
-                      objectFit:
-                        "cover",
-                      borderRadius:
-                        "16px",
-                      marginBottom:
-                        "15px",
-                    }}
                   />
-                ) : (
-                  <div
-                    className="avatar"
-                    style={{
-                      marginBottom:
-                        "15px",
-                    }}
-                  >
-                    🍲
-                  </div>
-                )}
-                <div className="customer-head">
-                  <div>
-                    <h3>
-                      {meal.name}
-                    </h3>
-                    <span>
-                      {meal.description ||
-                        "وجبة بيتية طازجة"}
+                </div>
+                <div className="daily-meal-copy">
+                  <div className="customer-head">
+                    <div>
+                      <h3>
+                        {meal.name}
+                      </h3>
+                      <span>
+                        {meal.description ||
+                          "وجبة بيتية طازجة"}
+                      </span>
+                    </div>
+                    <span className="badge-active">
+                      متاحة
                     </span>
                   </div>
-                  <span className="badge-active">
-                    متاحة
-                  </span>
-                </div>
-                <div className="customer-info">
-                  <div>
-                    <small>
-                      💰 السعر
-                    </small>
-                    <strong>
-                      {meal.price ||
-                        DAILY_PRICE}{" "}
-                      د.أ
-                    </strong>
+                  <div className="customer-info">
+                    <div>
+                      <small>
+                        💰 السعر
+                      </small>
+                      <strong>
+                        {meal.price ||
+                          DAILY_PRICE}{" "}
+                        د.أ
+                      </strong>
+                    </div>
                   </div>
+                  <button
+                    className="main-btn"
+                    disabled={
+                      ordersClosed
+                    }
+                    onClick={() => onAddToCart(meal)}
+                  >
+                    {ordersClosed
+                      ? "🔴 انتهى وقت الطلب"
+                      : "اطلب هذه الوجبة"}
+                  </button>
                 </div>
-                <button
-                  className="main-btn"
-                  disabled={
-                    ordersClosed
-                  }
-                  onClick={() =>
-                    onOrder(meal)
-                  }
-                >
-                  {ordersClosed
-                    ? "🔴 انتهى وقت الطلب"
-                    : "اطلب هذه الوجبة"}
-                </button>
               </div>
             )
           )}
@@ -5310,8 +5460,12 @@ function Plan({
   plan,
   onSelect,
 }) {
+  const isBest = plan.days === 26 && plan.meals === 2
   return (
-    <div className="plan">
+    <div className={`plan ${isBest ? "plan-best" : ""}`}>
+      {isBest && (
+        <span className="plan-best-badge">الأكثر طلباً</span>
+      )}
       <div className="meal-number">
         {plan.meals}
       </div>
@@ -5666,4 +5820,156 @@ function EditSubscriptionPopup({
 /* ======================================================
    EXPORT
 ====================================================== */
+function CartPopup({
+  cart,
+  subtotal,
+  onClose,
+  onUpdateQuantity,
+  onRemove,
+  onClear,
+  onCheckout,
+}) {
+  return (
+    <div className="popup-background">
+      <div className="popup cart-popup">
+
+        <button className="close" onClick={onClose}>
+          ×
+        </button>
+
+        <div className="cart-header">
+          <span className="cart-icon">🛒</span>
+
+          <div>
+            <h2>سلة الطلب</h2>
+            <p>
+              {cart.length === 0
+                ? "السلة فارغة"
+                : `${cart.length} وجبات مختارة`}
+            </p>
+          </div>
+        </div>
+
+        {cart.length === 0 ? (
+          <div className="empty-cart">
+            <div>🛒</div>
+            <h3>السلة فارغة</h3>
+            <p>اختر وجباتك اليومية وأضفها إلى السلة.</p>
+
+            <button
+              className="main-btn"
+              onClick={onClose}
+            >
+              متابعة التصفح
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="cart-items">
+              {cart.map((item) => (
+                <div
+                  className="cart-item"
+                  key={item.meal_id}
+                >
+                  <img
+                    src={item.image}
+                    alt={item.meal_name}
+                  />
+
+                  <div className="cart-item-info">
+                    <h3>{item.meal_name}</h3>
+
+                    <span>
+                      {item.price.toFixed(2)} د.أ / وجبة
+                    </span>
+
+                    <strong>
+                      {item.total.toFixed(2)} د.أ
+                    </strong>
+                  </div>
+
+                  <div className="cart-quantity">
+                    <button
+                      onClick={() =>
+                        onUpdateQuantity(
+                          item.meal_id,
+                          item.quantity - 1
+                        )
+                      }
+                    >
+                      −
+                    </button>
+
+                    <span>{item.quantity}</span>
+
+                    <button
+                      onClick={() =>
+                        onUpdateQuantity(
+                          item.meal_id,
+                          item.quantity + 1
+                        )
+                      }
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    className="cart-remove"
+                    onClick={() =>
+                      onRemove(item.meal_id)
+                    }
+                  >
+                    حذف
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="cart-summary">
+              <div>
+                <span>عدد الوجبات</span>
+                <strong>
+                  {cart.reduce(
+                    (sum, item) =>
+                      sum + Number(item.quantity),
+                    0
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>التوصيل</span>
+                <strong>يحدد عند التأكيد</strong>
+              </div>
+
+              <div className="cart-total">
+                <span>الإجمالي</span>
+                <strong>
+                  {subtotal.toFixed(2)} د.أ
+                </strong>
+              </div>
+            </div>
+
+            <div className="cart-actions">
+              <button
+                className="secondary-btn"
+                onClick={onClear}
+              >
+                إفراغ السلة
+              </button>
+
+              <button
+                className="main-btn"
+                onClick={onCheckout}
+              >
+                متابعة وإكمال الطلب
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
 export default App
