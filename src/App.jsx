@@ -751,14 +751,8 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
      CLOSING TIME
   ====================================================== */
   const checkClosingTime = () => {
-    const now = new Date()
-    const currentMinutes =
-      now.getHours() * 60 +
-      now.getMinutes()
-    setOrdersClosed(
-      currentMinutes >= 16 * 60
-    )
-  }
+  setOrdersClosed(false)
+}
   /* ======================================================
      LOAD MEALS
   ====================================================== */
@@ -1637,10 +1631,13 @@ setSubscriberDailyMeals(
         loadAdminDailyMenu()
       }
     }
-
-    if (page === "daily" || page === "subscriber") {
-      loadPublishedMenu()
-    }
+if (
+  page === "home" ||
+  page === "daily" ||
+  page === "subscriber"
+) {
+  loadPublishedMenu()
+}
 
     if (page === "daily") {
       loadMeals()
@@ -1891,19 +1888,7 @@ await loadDashboard()
     meal = null
   ) => {
     checkClosingTime()
-    const now = new Date()
-    const currentMinutes =
-      now.getHours() * 60 +
-      now.getMinutes()
-    if (
-      currentMinutes >=
-      16 * 60
-    ) {
-      setOrdersClosed(true)
-      alert(
-        "الطلبات اليومية مغلقة بعد الساعة 4:00 عصراً."
-      )
-      return
+   
     }
     const todayPublicMeals = publicTodayMeals
 
@@ -1927,20 +1912,7 @@ await loadDashboard()
   ====================================================== */
   const saveDailyOrder =
     async () => {
-      const now = new Date()
-      const currentMinutes =
-        now.getHours() * 60 +
-        now.getMinutes()
-      if (
-        currentMinutes >=
-        16 * 60
-      ) {
-        setOrdersClosed(true)
-        alert(
-          "الطلبات اليومية مغلقة بعد الساعة 4:00 عصراً."
-        )
-        return
-      }
+      
       if (
         !customerName.trim() ||
         !customerPhone.trim() ||
