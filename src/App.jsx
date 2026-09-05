@@ -19,6 +19,7 @@ function getToday() {
     `${String(now.getMonth() + 1).padStart(2, "0")}-` +
     `${String(now.getDate()).padStart(2, "0")}`
   )
+  
 }
 /* ======================================================
    LOCATION
@@ -362,7 +363,9 @@ function SubscriberPage({
               </div>
             </>
           )}
+          
         </div>
+        
         {/* =========================================
             اختيار وجبات اليوم القادم
         ========================================= */}
@@ -398,86 +401,7 @@ function SubscriberPage({
                   const quantity = Number(
                     selectedMeals[meal.id] || 0
                   )
-                  const addToCart = (meal, quantity = 1) => {
-  if (!meal) return
-
-  const price = Number(meal.price || DAILY_PRICE)
-
-  setCart((currentCart) => {
-    const existing = currentCart.find(
-      (item) => String(item.meal_id) === String(meal.id)
-    )
-
-    if (existing) {
-      return currentCart.map((item) =>
-        String(item.meal_id) === String(meal.id)
-          ? {
-              ...item,
-              quantity: item.quantity + quantity,
-              total: (item.quantity + quantity) * item.price,
-            }
-          : item
-      )
-    }
-
-    return [
-      ...currentCart,
-      {
-        meal_id: meal.id,
-        meal_name: meal.name,
-        price,
-        quantity,
-        total: price * quantity,
-        image: meal.image_url || meal.image || mealFallbackImage,
-      },
-    ]
-  })
-
-  setDailyOrderOpen(false)
-}
-
-const updateCartQuantity = (mealId, quantity) => {
-  const newQuantity = Number(quantity)
-
-  if (newQuantity <= 0) {
-    removeFromCart(mealId)
-    return
-  }
-
-  setCart((currentCart) =>
-    currentCart.map((item) =>
-      String(item.meal_id) === String(mealId)
-        ? {
-            ...item,
-            quantity: newQuantity,
-            total: newQuantity * item.price,
-          }
-        : item
-    )
-  )
-}
-
-const removeFromCart = (mealId) => {
-  setCart((currentCart) =>
-    currentCart.filter(
-      (item) => String(item.meal_id) !== String(mealId)
-    )
-  )
-}
-
-const clearCart = () => {
-  setCart([])
-}
-
-const cartItemsCount = cart.reduce(
-  (sum, item) => sum + Number(item.quantity || 0),
-  0
-)
-
-const cartSubtotal = cart.reduce(
-  (sum, item) => sum + Number(item.total || 0),
-  0
-)
+                  
                   return (
                     <div
                       key={meal.id}
@@ -733,6 +657,7 @@ const loginAdmin = async (email, password) => {
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
   const [customerAddress, setCustomerAddress] = useState("")
+  const [checkoutSaving, setCheckoutSaving] = useState(false)
   /* ======================================================
      SUBSCRIPTION
   ====================================================== */
@@ -753,6 +678,7 @@ const loginAdmin = async (email, password) => {
     useState(false)
     const [cart, setCart] = useState([])
 const [cartOpen, setCartOpen] = useState(false)
+const [checkoutOpen, setCheckoutOpen] = useState(false)
 const cartItemsCount = cart.reduce(
   (sum, item) => sum + Number(item.quantity || 0),
   0
@@ -2351,6 +2277,83 @@ await loadDashboard()
     tomorrowPublishedItems.length > 0
 
   const publicTomorrowMeals = tomorrowPublishedItems
+const addToCart = (meal, quantity = 1) => {
+  if (!meal) return
+
+  const price = Number(meal.price || DAILY_PRICE)
+
+  setCart((currentCart) => {
+    const existing = currentCart.find(
+      (item) =>
+        String(item.meal_id) === String(meal.id)
+    )
+
+    if (existing) {
+      return currentCart.map((item) =>
+        String(item.meal_id) === String(meal.id)
+          ? {
+              ...item,
+              quantity: item.quantity + quantity,
+              total:
+                (item.quantity + quantity) *
+                item.price,
+            }
+          : item
+      )
+    }
+
+    return [
+      ...currentCart,
+      {
+        meal_id: meal.id,
+        meal_name: meal.name,
+        price,
+        quantity,
+        total: price * quantity,
+        image:
+          meal.image_url ||
+          meal.image ||
+          mealFallbackImage,
+      },
+    ]
+  })
+
+  setCartOpen(true)
+}
+
+const updateCartQuantity = (mealId, quantity) => {
+  const newQuantity = Number(quantity)
+
+  if (newQuantity <= 0) {
+    removeFromCart(mealId)
+    return
+  }
+
+  setCart((currentCart) =>
+    currentCart.map((item) =>
+      String(item.meal_id) === String(mealId)
+        ? {
+            ...item,
+            quantity: newQuantity,
+            total: newQuantity * item.price,
+          }
+        : item
+    )
+  )
+}
+
+const removeFromCart = (mealId) => {
+  setCart((currentCart) =>
+    currentCart.filter(
+      (item) =>
+        String(item.meal_id) !== String(mealId)
+    )
+  )
+}
+
+const clearCart = () => {
+  setCart([])
+}
 
   /* ======================================================
      RETURN
@@ -2570,8 +2573,27 @@ onOpenCart={() => setCartOpen(true)}
     onRemove={removeFromCart}
     onClear={clearCart}
     onCheckout={() => {
-      setCartOpen(false)
-      setDailyOrderOpen(true)
+  setCartOpen(false)
+  setCheckoutOpen(true)
+  
+}}
+
+  />
+)}
+{checkoutOpen && (
+  <CheckoutPopup
+    cart={cart}
+    subtotal={cartSubtotal}
+    customerName={customerName}
+    setCustomerName={setCustomerName}
+    customerPhone={customerPhone}
+    setCustomerPhone={setCustomerPhone}
+    customerAddress={customerAddress}
+    setCustomerAddress={setCustomerAddress}
+    checkoutSaving={checkoutSaving}
+    onClose={() => setCheckoutOpen(false)}
+    onConfirm={() => {
+      alert("سيتم ربط تأكيد الطلب بقاعدة البيانات في الخطوة التالية.")
     }}
   />
 )}
@@ -4068,6 +4090,108 @@ function DailyOrderPopup({
             ? "جاري تسجيل الطلب..."
             : "تأكيد الطلب"}
         </button>
+      </div>
+    </div>
+  )
+}
+function CheckoutPopup({
+  cart,
+  subtotal,
+  customerName,
+  setCustomerName,
+  customerPhone,
+  setCustomerPhone,
+  customerAddress,
+  setCustomerAddress,
+  checkoutSaving,
+  onConfirm,
+  onClose,
+}) {
+  return (
+    <div className="popup-background">
+      <div className="popup checkout-popup">
+
+        <button
+          className="close"
+          onClick={onClose}
+        >
+          ×
+        </button>
+
+        <h2>🛒 إكمال الطلب</h2>
+
+        <p className="checkout-subtitle">
+          راجع طلبك وأدخل بيانات التوصيل
+        </p>
+
+        <div className="checkout-items">
+          {cart.map((item) => (
+            <div
+              className="checkout-item"
+              key={item.meal_id}
+            >
+              <div>
+                <strong>{item.meal_name}</strong>
+                <small>
+                  {item.quantity} ×{" "}
+                  {Number(item.price).toFixed(2)} د.أ
+                </small>
+              </div>
+
+              <strong>
+                {Number(item.total).toFixed(2)} د.أ
+              </strong>
+            </div>
+          ))}
+        </div>
+
+        <div className="checkout-total">
+          <span>إجمالي الوجبات</span>
+          <strong>
+            {Number(subtotal).toFixed(2)} د.أ
+          </strong>
+        </div>
+
+        <div className="checkout-delivery-note">
+          🚚 رسوم التوصيل غير مشمولة
+        </div>
+
+        <input
+          type="text"
+          placeholder="الاسم الكامل"
+          value={customerName}
+          onChange={(e) =>
+            setCustomerName(e.target.value)
+          }
+        />
+
+        <input
+          type="tel"
+          placeholder="رقم الهاتف"
+          value={customerPhone}
+          onChange={(e) =>
+            setCustomerPhone(e.target.value)
+          }
+        />
+
+        <textarea
+          placeholder="منطقة التوصيل والعنوان بالتفصيل"
+          value={customerAddress}
+          onChange={(e) =>
+            setCustomerAddress(e.target.value)
+          }
+        />
+
+        <button
+          className="confirm"
+          onClick={onConfirm}
+          disabled={checkoutSaving || cart.length === 0}
+        >
+          {checkoutSaving
+            ? "جاري تسجيل الطلب..."
+            : "✅ تأكيد وإرسال الطلب"}
+        </button>
+
       </div>
     </div>
   )
