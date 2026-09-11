@@ -1,8 +1,8 @@
 
-import { useEffect, useRef, useState } from "react"
-import "./App.css"
+import { useEffect, useRef, useState } from "react" 
 import { supabase } from "./supabase"
 import { brandImages, mealFallbackImage } from "./brandMedia"
+import "./App.css"
 const plans = [
   { id: 1, days: 26, meals: 1, price: 90 },
   { id: 2, days: 26, meals: 2, price: 165 },
@@ -12,6 +12,15 @@ const plans = [
   { id: 6, days: 20, meals: 3, price: 165 },
 ]
 const DAILY_PRICE = 3
+const DAILY_DEFAULT_MEAL_COUNT = 4
+const FOOTER_MEAL_IMAGES = [
+  "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1482049016688-2d3e1b311543?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1551183053-bf71b1e09e2d?auto=format&fit=crop&w=1200&q=80",
+]
 function getToday() {
   const now = new Date()
   return (
@@ -60,199 +69,129 @@ function getCustomerLocation() {
 function SubscriberPage({
   subscription,
   availableMeals = [],
+  tomorrowAvailableMeals = [],
   onClose,
 }) {
   const [dailyMeals, setDailyMeals] = useState([])
-  const [tomorrowMeals, setTomorrowMeals] = useState([])
+  const [selectionMeals, setSelectionMeals] = useState([])
+  const [selectionDate, setSelectionDate] = useState(null)
   const [selectedMeals, setSelectedMeals] = useState({})
   const [loadingDaily, setLoadingDaily] = useState(true)
   const [savingMeals, setSavingMeals] = useState(false)
+  const [dailyNote, setDailyNote] = useState("")
   const today = new Date()
   const todayDate = getToday()
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  // الجمعة عطلة، لذلك إذا كان الغد جمعة نختار للسبت
-  if (tomorrow.getDay() === 5) {
-    tomorrow.setDate(tomorrow.getDate() + 1)
-  }
-  const tomorrowDate = `${tomorrow.getFullYear()}-${String(
-    tomorrow.getMonth() + 1
-  ).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`
-  const date = today.toLocaleDateString("ar-JO", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
-  const weekday = today.toLocaleDateString("ar-JO", {
-    weekday: "long",
-  })
-  const tomorrowText = tomorrow.toLocaleDateString("ar-JO", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
-  const tomorrowWeekday = tomorrow.toLocaleDateString("ar-JO", {
-    weekday: "long",
-  })
+  const date = today.toLocaleDateString("ar-JO", { day: "numeric", month: "long", year: "numeric" })
+  const weekday = today.toLocaleDateString("ar-JO", { weekday: "long" })
+  const isFriday = today.getDay() === 5
+  const formatDate = (dateValue) => `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}-${String(dateValue.getDate()).padStart(2, "0")}`
   useEffect(() => {
     const loadDailyMeals = async () => {
       if (!subscription?.id) return
       setLoadingDaily(true)
-      const [todayResult, tomorrowResult] = await Promise.all([
-        supabase
+      try {
+        const { data: allRows, error: allError } = await supabase
           .from("subscription_daily_meals")
           .select("*")
           .eq("subscription_id", subscription.id)
-          .eq("meal_date", todayDate)
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("subscription_daily_meals")
-          .select("*")
-          .eq("subscription_id", subscription.id)
-          .eq("meal_date", tomorrowDate)
-          .order("created_at", { ascending: true }),
-      ])
-      if (todayResult.error) {
-        console.error(
-          "TODAY DAILY MEALS ERROR:",
-          todayResult.error
-        )
-        setDailyMeals([])
-      } else {
-        setDailyMeals(todayResult.data || [])
-      }
-      if (tomorrowResult.error) {
-        console.error(
-          "TOMORROW DAILY MEALS ERROR:",
-          tomorrowResult.error
-        )
-        setTomorrowMeals([])
-      } else {
-        const data = tomorrowResult.data || []
-        setTomorrowMeals(data)
+          .order("meal_date", { ascending: true })
+          .order("created_at", { ascending: true })
+        if (allError) {
+          console.error("SUBSCRIBER DAILY MEALS ERROR:", allError)
+          setDailyMeals([])
+          setSelectionMeals([])
+          setSelectionDate(todayDate)
+          return
+        }
+        const rows = allRows || []
+        const todayRows = rows.filter((item) => item.meal_date === todayDate)
+        setDailyMeals(todayRows)
+        // المشترك يختار فقط من قائمة اليوم الحالية، ولا نرحّله تلقائياً للغد.
+        const selectionDateValue = todayDate
+        setSelectionDate(selectionDateValue)
+        setSelectionMeals((availableMeals || []).filter(Boolean))
+        const selectedRows = rows.filter((item) => item.meal_date === selectionDateValue)
         const selected = {}
-        data.forEach((item) => {
-          if (item.meal_id) {
-            selected[item.meal_id] = Number(item.quantity || 1)
-          }
+        selectedRows.forEach((item) => {
+          if (item.meal_id) selected[item.meal_id] = Number(item.quantity || 1)
         })
         setSelectedMeals(selected)
+        setDailyNote(selectedRows[0]?.notes || "")
+        // إجمالي الوجبات المستخدمة = الوجبات المسجلة حتى تاريخ اليوم فقط.
+        const used = rows
+          .filter((item) => item.meal_date && item.meal_date <= todayDate)
+          .reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+        const total = Number(subscription.total_meals || Number(subscription.plan_days || 0) * Number(subscription.meals_per_day || 0))
+        const remaining = Math.max(0, total - used)
+        setSubscriptionStats({ used, remaining })
+      } finally {
+        setLoadingDaily(false)
       }
-      setLoadingDaily(false)
     }
     loadDailyMeals()
-  }, [subscription?.id, todayDate, tomorrowDate])
-  const todayUsed = dailyMeals.reduce(
-    (sum, item) => sum + Number(item.quantity || 0),
-    0
-  )
-  const todayRemaining = Math.max(
-    0,
-    Number(subscription?.meals_per_day || 0) - todayUsed
-  )
-  const tomorrowSelectedCount = Object.values(
-    selectedMeals
-  ).reduce(
-    (sum, quantity) => sum + Number(quantity || 0),
-    0
-  )
-  const tomorrowRemaining = Math.max(
-    0,
-    Number(subscription?.meals_per_day || 0) -
-      tomorrowSelectedCount
-  )
+  }, [subscription?.id, todayDate, availableMeals])
+  const [subscriptionStats, setSubscriptionStats] = useState({ used: 0, remaining: 0 })
+  const selectionDateObject = selectionDate ? new Date(`${selectionDate}T00:00:00`) : new Date()
+  const selectionText = selectionDateObject.toLocaleDateString("ar-JO", { day: "numeric", month: "long", year: "numeric" })
+  const selectionWeekday = selectionDateObject.toLocaleDateString("ar-JO", { weekday: "long" })
+  const selectionMealsCount = Object.values(selectedMeals).reduce((sum, quantity) => sum + Number(quantity || 0), 0)
+  const selectionRemaining = Math.max(0, Number(subscription?.meals_per_day || 0) - selectionMealsCount)
   const changeMealQuantity = (mealId, change) => {
     setSelectedMeals((prev) => {
       const current = Number(prev[mealId] || 0)
       const max = Number(subscription?.meals_per_day || 0)
-      let next = current + change
-      if (next < 0) next = 0
-      if (next > max) {
-        next = max
-      }
+      let next = Math.max(0, Math.min(max, current + change))
       const totalOther = Object.entries(prev)
         .filter(([id]) => String(id) !== String(mealId))
-        .reduce(
-          (sum, [, quantity]) =>
-            sum + Number(quantity || 0),
-          0
-        )
-      if (totalOther + next > max) {
-        next = Math.max(0, max - totalOther)
-      }
+        .reduce((sum, [, quantity]) => sum + Number(quantity || 0), 0)
+      if (totalOther + next > max) next = Math.max(0, max - totalOther)
       const result = { ...prev }
-      if (next === 0) {
-        delete result[mealId]
-      } else {
-        result[mealId] = next
-      }
+      if (next === 0) delete result[mealId]
+      else result[mealId] = next
       return result
     })
   }
   const saveTomorrowMeals = async () => {
-    if (!subscription?.id) return
-    const maxMeals = Number(
-      subscription.meals_per_day || 0
-    )
-    if (tomorrowSelectedCount !== maxMeals) {
-      alert(
-        `يجب اختيار ${maxMeals} وجبة لليوم ${tomorrowWeekday}`
-      )
+    if (!subscription?.id || !selectionDate) return
+    const maxMeals = Number(subscription.meals_per_day || 0)
+    if (selectionMealsCount !== maxMeals) {
+      alert(`يجب اختيار ${maxMeals} وجبة ليوم ${selectionWeekday}`)
       return
     }
     setSavingMeals(true)
     try {
-      const { error: deleteError } = await supabase
-        .from("subscription_daily_meals")
-        .delete()
-        .eq("subscription_id", subscription.id)
-        .eq("meal_date", tomorrowDate)
-      if (deleteError) {
-        console.error(
-          "DELETE TOMORROW MEALS ERROR:",
-          deleteError
-        )
-        alert("تعذر تحديث الوجبات")
-        return
-      }
-      const rows = Object.entries(selectedMeals)
-        .map(([mealId, quantity]) => {
-          const meal = availableMeals.find(
-            (item) => String(item.id) === String(mealId)
-          )
-          if (!meal) return null
-          return {
-            subscription_id: subscription.id,
-            meal_date: tomorrowDate,
-            meal_id: meal.id,
-            meal_name: meal.name,
-            quantity: Number(quantity),
-          }
-        })
-        .filter(Boolean)
-      if (rows.length === 0) {
+      const rows = Object.entries(selectedMeals).map(([mealId, quantity]) => {
+        const meal = selectionMeals.find((item) => String(item.id) === String(mealId))
+        return meal ? {
+          meal_id: meal.id,
+          meal_name: meal.name,
+          quantity: Number(quantity),
+          notes: dailyNote.trim() || null,
+        } : null
+      }).filter(Boolean)
+      if (!rows.length) {
         alert("اختر الوجبات أولاً")
         return
       }
-      const { data, error } = await supabase
-        .from("subscription_daily_meals")
-        .insert(rows)
-        .select()
+      // الحفظ عبر RPC موثوق وآمن: الدالة تتحقق من tracking_token ثم تستبدل اختيارات اليوم.
+      const { error } = await supabase.rpc("save_subscription_daily_meals", {
+        p_subscription_id: subscription.id,
+        p_tracking_token: subscription.tracking_token,
+        p_meal_date: selectionDate,
+        p_meals: rows,
+      })
       if (error) {
-        console.error(
-          "SAVE TOMORROW MEALS ERROR:",
-          error
-        )
-        alert("تعذر حفظ الوجبات")
+        console.error("SAVE SUBSCRIBER MEALS RPC ERROR:", error)
+        alert(`تعذر حفظ وجباتك حالياً. تأكد من تشغيل ملف SQL المرفق مرة واحدة في Supabase.\n\n${error.message || "خطأ غير معروف"}`)
         return
       }
-      setTomorrowMeals(data || [])
+      const savedRows = rows.map((row) => ({ ...row, subscription_id: subscription.id, meal_date: selectionDate }))
+      if (selectionDate === todayDate) setDailyMeals(savedRows)
+      setSelectionMeals(selectionMeals)
+      localStorage.removeItem(`chefNoorMeals:${subscription.id}:${selectionDate}`)
       alert("تم حفظ وجباتك بنجاح ✅")
     } catch (error) {
-      console.error(
-        "SAVE TOMORROW MEALS ERROR:",
-        error
-      )
+      console.error("SAVE TOMORROW MEALS ERROR:", error)
       alert("حدث خطأ أثناء حفظ الوجبات")
     } finally {
       setSavingMeals(false)
@@ -270,7 +209,6 @@ function SubscriberPage({
       alert("تعذر نسخ الرابط")
     }
   }
-  const isFriday = today.getDay() === 5
   return (
     <section className="subscriber-page section">
       <div className="subscriber-card">
@@ -329,162 +267,67 @@ function SubscriberPage({
           <div>
             <span>المستخدم</span>
             <strong>
-              {subscription?.used_meals || 0}
+              {subscriptionStats.used}
             </strong>
           </div>
           <div>
             <span>المتبقي</span>
             <strong>
-              {subscription?.remaining_meals || 0}
+              {subscriptionStats.remaining}
             </strong>
           </div>
         </div>
         <div className="today-meals-box">
-          <strong>
-            وجبات اليوم
-          </strong>
-          {isFriday ? (
-            <p>
-              اليوم الجمعة عطلة
-            </p>
-          ) : loadingDaily ? (
-            <p>
-              جاري تحميل وجباتك...
-            </p>
+          <strong>وجبات اليوم</strong>
+          {loadingDaily ? (
+            <p>جاري تحميل وجباتك...</p>
+          ) : dailyMeals.length === 0 ? (
+            <p>لم يتم اختيار وجبات لليوم بعد.</p>
           ) : (
             <>
-              <div>
-                المستخدم اليوم:
-                <strong>{todayUsed}</strong>
-              </div>
-              <div>
-                المتبقي اليوم:
-                <strong>{todayRemaining}</strong>
-              </div>
+              <div>المستخدم حتى اليوم: <strong>{subscriptionStats.used}</strong></div>
+              <div>المتبقي من الاشتراك: <strong>{subscriptionStats.remaining}</strong></div>
             </>
           )}
-          
         </div>
-        
-        {/* =========================================
-            اختيار وجبات اليوم القادم
-        ========================================= */}
-        {!isFriday && (
-          <div className="subscriber-meal-selection">
-            <div className="section-title">
-              <small>
-                اختيار الوجبات مسبقاً
-              </small>
-              <h3>
-                اختر وجبات {tomorrowWeekday}
-              </h3>
-              <p>
-                {tomorrowText}
-              </p>
-            </div>
-            <div className="meal-selection-counter">
-              <strong>
-                اخترت {tomorrowSelectedCount} من{" "}
-                {subscription?.meals_per_day || 0}
-              </strong>
-              <span>
-                المتبقي للاختيار: {tomorrowRemaining}
-              </span>
-            </div>
-            {availableMeals.length === 0 ? (
-              <div className="empty-state">
-                لا توجد وجبات متاحة حالياً.
-              </div>
-            ) : (
-              <div className="subscriber-meals-grid">
-                {availableMeals.map((meal) => {
-                  const quantity = Number(
-                    selectedMeals[meal.id] || 0
-                  )
-                  
-                  return (
-                    <div
-                      key={meal.id}
-                      className={`subscriber-meal-card ${
-                        quantity > 0
-                          ? "selected"
-                          : ""
-                      }`}
-                    >
-                      {meal.image_url && (
-                        <img
-                          src={meal.image_url}
-                          alt={meal.name}
-                        />
-                      )}
-                      <div className="subscriber-meal-info">
-                        <strong>
-                          {meal.name}
-                        </strong>
-                        {meal.description && (
-                          <p>
-                            {meal.description}
-                          </p>
-                        )}
-                      </div>
-                      <div className="meal-quantity-control">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            changeMealQuantity(
-                              meal.id,
-                              -1
-                            )
-                          }
-                          disabled={quantity === 0}
-                        >
-                          −
-                        </button>
-                        <strong>
-                          {quantity}
-                        </strong>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            changeMealQuantity(
-                              meal.id,
-                              1
-                            )
-                          }
-                          disabled={
-                            tomorrowSelectedCount >=
-                            Number(
-                              subscription?.meals_per_day ||
-                                0
-                            )
-                          }
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            <button
-              type="button"
-              className="primary-btn"
-              onClick={saveTomorrowMeals}
-              disabled={
-                savingMeals ||
-                tomorrowSelectedCount !==
-                  Number(
-                    subscription?.meals_per_day || 0
-                  )
-              }
-            >
-              {savingMeals
-                ? "جاري الحفظ..."
-                : "حفظ وجباتي"}
-            </button>
+        <div className="subscriber-meal-selection">
+          <div className="section-title">
+            <small>اختيار الوجبات اليومية</small>
+            <h3>اختر وجبات {selectionWeekday}</h3>
+            <p>{selectionText}</p>
           </div>
-        )}
+          <div className="meal-selection-counter">
+            <strong>اخترت {selectionMealsCount} من {subscription?.meals_per_day || 0}</strong>
+            <span>المتبقي للاختيار: {selectionRemaining}</span>
+          </div>
+          {selectionMeals.length === 0 ? (
+            <div className="empty-state">لا توجد وجبات منشورة لهذا اليوم حالياً.</div>
+          ) : (
+            <div className="subscriber-meals-grid">
+              {selectionMeals.map((meal, index) => {
+                const quantity = Number(selectedMeals[meal.id] || 0)
+                return (
+                  <div key={meal.id} className={`subscriber-meal-card ${quantity > 0 ? "selected" : ""}`}>
+                    <img src={meal.image_url || mealFallbackImage(index)} alt={meal.name} />
+                    <div className="subscriber-meal-info">
+                      <strong>{meal.name}</strong>
+                      <p>{meal.description || "وجبة منزلية طازجة محضّرة بعناية."}</p>
+                    </div>
+                    <div className="meal-quantity-control">
+                      <button type="button" onClick={() => changeMealQuantity(meal.id, -1)} disabled={quantity === 0}>−</button>
+                      <strong>{quantity}</strong>
+                      <button type="button" onClick={() => changeMealQuantity(meal.id, 1)} disabled={selectionMealsCount >= Number(subscription?.meals_per_day || 0) || quantity >= 1}>+</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <textarea className="subscriber-note-input" placeholder="ملاحظة لهذا اليوم (اختياري): كمية الطعام، وزن الكربوهيدرات، مكوّن لا ترغب به أو أي طلب خاص." value={dailyNote} onChange={(e) => setDailyNote(e.target.value)} />
+          <button type="button" className="primary-btn" onClick={saveTomorrowMeals} disabled={savingMeals || selectionMealsCount !== Number(subscription?.meals_per_day || 0)}>
+            {savingMeals ? "جاري الحفظ..." : "حفظ وجباتي"}
+          </button>
+        </div>
         {/* =========================================
             وجبات اليوم المحفوظة
         ========================================= */}
@@ -657,6 +500,9 @@ const loginAdmin = async (email, password) => {
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
   const [customerAddress, setCustomerAddress] = useState("")
+  const [customerLocation, setCustomerLocation] = useState({ latitude: null, longitude: null })
+  const [customerMapLink, setCustomerMapLink] = useState("")
+  const [customerNote, setCustomerNote] = useState("")
   const [checkoutSaving, setCheckoutSaving] = useState(false)
   /* ======================================================
      SUBSCRIPTION
@@ -679,17 +525,17 @@ const loginAdmin = async (email, password) => {
     const [cart, setCart] = useState([])
 const [cartOpen, setCartOpen] = useState(false)
 const [checkoutOpen, setCheckoutOpen] = useState(false)
+const [feedbackOpen, setFeedbackOpen] = useState(false)
 const cartItemsCount = cart.reduce(
   (sum, item) => sum + Number(item.quantity || 0),
   0
 )
-
-const cartSubtotal = cart.reduce(
+const cartItemsTotal = cart.reduce(
   (sum, item) => sum + Number(item.total || 0),
   0
 )
-  const [ordersClosed, setOrdersClosed] =
-    useState(false)
+const cartDeliveryTotal = cart.some((item) => item.kind !== "subscription") ? 1 : 0
+const cartSubtotal = cartItemsTotal + cartDeliveryTotal
   /* ======================================================
      DASHBOARD
   ====================================================== */
@@ -747,12 +593,15 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       meal.active &&
       meal.is_available
   )
-  /* ======================================================
-     CLOSING TIME
-  ====================================================== */
-  const checkClosingTime = () => {
-  setOrdersClosed(false)
-}
+  const useCustomerLocation = async () => {
+    const location = await getCustomerLocation()
+    if (location.latitude != null && location.longitude != null) {
+      setCustomerLocation(location)
+      return true
+    }
+    alert("تعذر تحديد موقعك. يمكنك المتابعة وكتابة عنوان السكن بالتفصيل، أو فتح Google Maps واستخدامه يدويًا.")
+    return false
+  }
   /* ======================================================
      LOAD MEALS
   ====================================================== */
@@ -979,7 +828,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
   ====================================================== */
   const formatDateLocal = (date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
-
   const getMonthMeta = (startDate) => {
     const d = new Date(`${startDate}T00:00:00`)
     return {
@@ -987,13 +835,11 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       month: d.getMonth() + 1,
     }
   }
-
   const loadMenuPlan = async () => {
     setLoadingMenuPlan(true)
     try {
       const today = new Date()
       const todayText = formatDateLocal(today)
-
       let { data: monthData, error: monthError } = await supabase
         .from("menu_months")
         .select("*")
@@ -1001,9 +847,7 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
         .order("id", { ascending: false })
         .limit(1)
         .maybeSingle()
-
       if (monthError) throw monthError
-
       if (!monthData) {
         const meta = getMonthMeta(todayText)
         const { data: createdMonth, error: createError } = await supabase
@@ -1013,9 +857,7 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
             p_month: meta.month,
             p_start_date: todayText,
           })
-
         if (createError) throw createError
-
         const newId = Number(createdMonth)
         const { data: freshMonth, error: freshMonthError } = await supabase
           .from("menu_months")
@@ -1025,25 +867,20 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
         if (freshMonthError) throw freshMonthError
         monthData = freshMonth
       }
-
       const { data: daysData, error: daysError } = await supabase
         .from("daily_menu")
         .select("id, month_id, day_number, menu_date, is_holiday, is_published, notes")
         .eq("month_id", monthData.id)
         .order("day_number", { ascending: true })
-
       if (daysError) throw daysError
-
       // الجمعة عطلة حسب التاريخ الفعلي، وليس حسب رقم اليوم داخل الدورة.
       const normalizedDays = (daysData || []).map((day) => ({
         ...day,
         is_holiday: new Date(`${day.menu_date}T00:00:00`).getDay() === 5,
       }))
-
       const holidayChanges = normalizedDays.filter(
         (day, index) => day.is_holiday !== (daysData[index]?.is_holiday ?? false)
       )
-
       for (const day of holidayChanges) {
         const { error: holidayError } = await supabase
           .from("daily_menu")
@@ -1051,11 +888,9 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           .eq("id", day.id)
         if (holidayError) throw holidayError
       }
-
       const actualHolidayIds = normalizedDays
         .filter((day) => day.is_holiday)
         .map((day) => day.id)
-
       if (actualHolidayIds.length) {
         const { error: holidayItemsError } = await supabase
           .from("daily_menu_items")
@@ -1063,7 +898,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           .in("daily_menu_id", actualHolidayIds)
         if (holidayItemsError) throw holidayItemsError
       }
-
       const dayIds = normalizedDays.map((d) => d.id)
       let itemsData = []
       if (dayIds.length) {
@@ -1075,7 +909,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
         if (error) throw error
         itemsData = data || []
       }
-
       const { data: freshMeals, error: freshMealsError } = await supabase
         .from("meals")
         .select("*")
@@ -1086,21 +919,18 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       const available = freshMeals || []
       setMeals(available)
       const draftRows = []
+      const newlySeededDayIds = new Set()
       let mealCursor = 0
-
       for (const day of normalizedDays) {
         if (day.is_holiday) continue
         const existing = itemsData
           .filter((item) => item.daily_menu_id === day.id)
           .sort((a, b) => a.display_order - b.display_order)
-
         const usedMealIds = new Set(existing.map((item) => Number(item.meal_id)))
         let slot = existing.length + 1
-
-        while (slot <= 4 && available.length > usedMealIds.size) {
+        while (slot <= DAILY_DEFAULT_MEAL_COUNT && available.length > usedMealIds.size) {
           let found = null
           let attempts = 0
-
           while (attempts < available.length) {
             const candidate = available[mealCursor % available.length]
             mealCursor += 1
@@ -1110,9 +940,7 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
               break
             }
           }
-
           if (!found) break
-
           usedMealIds.add(Number(found.id))
           draftRows.push({
             daily_menu_id: day.id,
@@ -1120,16 +948,15 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
             display_order: slot,
             available: true,
           })
+          newlySeededDayIds.add(day.id)
           slot += 1
         }
       }
-
       if (draftRows.length) {
         const { error: seedError } = await supabase
           .from("daily_menu_items")
           .insert(draftRows)
         if (seedError) throw seedError
-
         const { data, error } = await supabase
           .from("daily_menu_items")
           .select("id, daily_menu_id, meal_id, display_order, available, meals(id, name, image_url, price)")
@@ -1138,7 +965,15 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
         if (error) throw error
         itemsData = data || []
       }
-
+      // الأيام الجديدة التي تم تجهيزها تلقائياً بأربع وجبات افتراضية تُنشر مباشرة.
+      // لا نعيد نشر يوم قام المدير بإلغاء نشره عمداً.
+      if (newlySeededDayIds.size) {
+        const { error: publishSeedError } = await supabase
+          .from("daily_menu")
+          .update({ is_published: true })
+          .in("id", Array.from(newlySeededDayIds))
+        if (publishSeedError) throw publishSeedError
+      }
       setMenuMonth(monthData)
       setMenuDays(normalizedDays.map((day) => ({
         ...day,
@@ -1151,7 +986,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       setLoadingMenuPlan(false)
     }
   }
-
   const updateMenuDayLocal = (dayId, slot, mealId) => {
     const meal =
       meals.find((m) => String(m.id) === String(mealId)) ||
@@ -1159,15 +993,12 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
         .flatMap((day) => day.items || [])
         .map((item) => item.meals)
         .find((m) => m && String(m.id) === String(mealId))
-
     setMenuDays((prev) =>
       prev.map((day) => {
         if (Number(day.id) !== Number(dayId)) return day
-
         const items = [...(day.items || [])]
         const index = Math.max(0, Number(slot) - 1)
         if (index >= items.length) return day
-
         if (!mealId) {
           items.splice(index, 1)
         } else if (meal) {
@@ -1176,12 +1007,10 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
               i !== index &&
               String(item.meal_id) === String(meal.id)
           )
-
           if (duplicateIndex >= 0) {
             alert("لا يمكن تكرار نفس الوجبة في اليوم نفسه.")
             return day
           }
-
           items[index] = {
             ...items[index],
             daily_menu_id: day.id,
@@ -1191,7 +1020,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
             meals: meal,
           }
         }
-
         return {
           ...day,
           items: items.map((item, i) => ({
@@ -1202,12 +1030,10 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       })
     )
   }
-
   const addMenuDaySlot = (dayId) => {
     setMenuDays((prev) =>
       prev.map((day) => {
         if (Number(day.id) !== Number(dayId) || day.is_holiday) return day
-
         const items = [...(day.items || [])]
         items.push({
           id: null,
@@ -1217,7 +1043,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           available: true,
           meals: null,
         })
-
         return {
           ...day,
           items,
@@ -1225,17 +1050,13 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       })
     )
   }
-
   const removeMenuDaySlot = (dayId, index) => {
     setMenuDays((prev) =>
       prev.map((day) => {
         if (Number(day.id) !== Number(dayId)) return day
-
         const items = [...(day.items || [])]
         if (index < 0 || index >= items.length) return day
-
         items.splice(index, 1)
-
         return {
           ...day,
           items: items.map((item, i) => ({
@@ -1246,7 +1067,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       })
     )
   }
-
   const saveMenuDay = async (day) => {
     if (!day?.id) return false
     setSavingMenuDay(day.id)
@@ -1260,20 +1080,17 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
             display_order: index + 1,
             available: true,
           }))
-
         if (rows.length === 0) {
           const proceed = window.confirm(
             "هذا اليوم لا يحتوي على أي وجبة. هل تريد حفظه بدون وجبات؟"
           )
           if (!proceed) return false
         }
-
         const { error: deleteError } = await supabase
           .from("daily_menu_items")
           .delete()
           .eq("daily_menu_id", day.id)
         if (deleteError) throw deleteError
-
         const { error: insertError } = await supabase
           .from("daily_menu_items")
           .insert(rows)
@@ -1285,20 +1102,17 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           .eq("daily_menu_id", day.id)
         if (deleteError) throw deleteError
       }
-
       const { error: dayError } = await supabase
         .from("daily_menu")
         .update({ is_holiday: Boolean(day.is_holiday) })
         .eq("id", day.id)
       if (dayError) throw dayError
-
       const { data: refreshedItems, error: itemsError } = await supabase
         .from("daily_menu_items")
         .select("id, daily_menu_id, meal_id, display_order, available, meals(id, name, image_url, price)")
         .eq("daily_menu_id", day.id)
         .order("display_order", { ascending: true })
       if (itemsError) throw itemsError
-
       setMenuDays((prev) => prev.map((d) =>
         d.id === day.id
           ? { ...d, is_holiday: Boolean(day.is_holiday), items: refreshedItems || [] }
@@ -1313,22 +1127,18 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       setSavingMenuDay(null)
     }
   }
-
   const toggleMenuHoliday = (dayId) => {
     setMenuDays((prev) => prev.map((day) => day.id === dayId ? { ...day, is_holiday: !day.is_holiday, items: !day.is_holiday ? [] : day.items } : day))
   }
-
   const publishMenuDay = async (day) => {
     try {
       const saved = await saveMenuDay(day)
       if (!saved) return
-
       const { error } = await supabase
         .from("daily_menu")
         .update({ is_published: true })
         .eq("id", day.id)
       if (error) throw error
-
       setMenuDays((prev) => prev.map((d) =>
         d.id === day.id ? { ...d, is_published: true } : d
       ))
@@ -1337,7 +1147,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       alert("تعذر نشر اليوم:\n" + error.message)
     }
   }
-
   const unpublishMenuDay = async (day) => {
     try {
       const { error } = await supabase.from("daily_menu").update({ is_published: false }).eq("id", day.id)
@@ -1348,7 +1157,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       alert("تعذر إلغاء نشر اليوم:\n" + error.message)
     }
   }
-
   /* ======================================================
      LOAD PUBLISHED MENU FOR WEBSITE
      الموقع والمشترك يقرآن فقط من جدول الأيام المنشورة
@@ -1359,16 +1167,13 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       const today = new Date()
       const tomorrow = new Date(today)
       tomorrow.setDate(tomorrow.getDate() + 1)
-
       // للمشترك: إذا كان اليوم التالي الجمعة، ننتقل إلى السبت
       const nextSubscriberDay = new Date(tomorrow)
       if (nextSubscriberDay.getDay() === 5) {
         nextSubscriberDay.setDate(nextSubscriberDay.getDate() + 1)
       }
-
       const formatDate = (date) =>
         `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
-
       const loadOneDay = async (date) => {
         const dateText = formatDate(date)
         const { data: dayRows, error: dayError } = await supabase
@@ -1378,20 +1183,16 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           .eq("is_published", true)
           .order("id", { ascending: false })
           .limit(1)
-
         if (dayError) throw dayError
         const day = dayRows?.[0] || null
         if (!day) return null
-
         const { data: items, error: itemsError } = await supabase
           .from("daily_menu_items")
           .select("id, display_order, available, meal_id, meals(id, name, description, image_url, price, active, is_available)")
           .eq("daily_menu_id", day.id)
           .eq("available", true)
           .order("display_order", { ascending: true })
-
         if (itemsError) throw itemsError
-
         return {
           ...day,
           items: (items || []).filter(
@@ -1399,12 +1200,10 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           ),
         }
       }
-
       const [todayMenu, tomorrowMenu] = await Promise.all([
         loadOneDay(today),
         loadOneDay(nextSubscriberDay),
       ])
-
       setPublishedDailyMenu(todayMenu)
       setPublishedTomorrowMenu(tomorrowMenu)
     } catch (error) {
@@ -1415,7 +1214,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       setLoadingPublishedMenu(false)
     }
   }
-
   /* ======================================================
      LOAD ADMIN DAILY MENU
   ====================================================== */
@@ -1444,7 +1242,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       setLoadingAdminDailyMenu(false)
     }
   }
-
   /* ======================================================
      LOAD DASHBOARD
   ====================================================== */
@@ -1603,20 +1400,19 @@ setSubscriberDailyMeals(
   /* ======================================================
      EFFECTS
   ====================================================== */
+  // تحديث قائمة الوجبات المنشورة تلقائياً حتى تنعكس تعديلات الإدارة على الموقع
+  // ورابط المشترك بدون الحاجة لإعادة نشر نسخة من التطبيق.
   useEffect(() => {
-    checkClosingTime()
-    const timer = setInterval(
-      checkClosingTime,
-      60000
-    )
-    return () => {
-      clearInterval(timer)
-    }
-  }, [])
+    const publicPages = ["home", "daily", "subscriber", "subscriptions"]
+    if (!publicPages.includes(page)) return undefined
+    const interval = window.setInterval(() => {
+      loadPublishedMenu()
+    }, 15000)
+    return () => window.clearInterval(interval)
+  }, [page])
   useEffect(() => {
     if (page === "admin") {
       loadDashboard()
-
       if (adminPage === "meals") {
         setMenuView("planner")
         ;(async () => {
@@ -1626,20 +1422,12 @@ setSubscriberDailyMeals(
       } else {
         loadMeals()
       }
-
       if (adminPage === "daily-menu") {
         loadAdminDailyMenu()
       }
     }
-if (
-  page === "home" ||
-  page === "daily" ||
-  page === "subscriber"
-) {
-  loadPublishedMenu()
-}
-
-    if (page === "daily") {
+    if (page === "home" || page === "daily" || page === "subscriber" || page === "subscriptions") {
+      loadPublishedMenu()
       loadMeals()
     }
   }, [page, adminPage])
@@ -1733,283 +1521,157 @@ const generateTrackingToken = () => {
   }
   return token
 }
+  const buildCustomerAddress = () => {
+    const base = customerAddress.trim()
+    const map = customerMapLink.trim()
+    const note = customerNote.trim()
+    const parts = [base]
+    if (map) parts.push(`رابط موقع Google Maps: ${map}`)
+    if (note) parts.push(`ملاحظات: ${note}`)
+    return parts.filter(Boolean).join("\n")
+  }
+  const addSubscriptionToCart = ({ plan }) => {
+    if (!plan) return
+    setCart((currentCart) => [
+      ...currentCart.filter((item) => item.kind !== "subscription"),
+      {
+        kind: "subscription",
+        cart_id: `subscription-${plan.id}`,
+        plan_id: plan.id,
+        plan_days: plan.days,
+        meals_per_day: plan.meals,
+        plan_price: Number(plan.price),
+        price: Number(plan.price),
+        quantity: 1,
+        total: Number(plan.price),
+        meal_name: `اشتراك ${plan.days} يوم — ${plan.meals} وجبة يومياً`,
+        image: mealFallbackImage(0),
+      },
+    ])
+    setSelectedPlan(null)
+    setCartOpen(true)
+  }
   const saveSubscription = async () => {
-    if (!selectedPlan) {
+    // الاشتراك أصبح يمر أولاً عبر السلة ثم يتم تأكيده منها.
+    setCartOpen(true)
+  }
+  const openDailyOrder = (meal = null) => {
+    const selected = meal || publicTodayMeals[0]
+    if (!selected) {
+      alert("لا توجد وجبات متاحة حالياً.")
       return
     }
-    if (
-      !customerName.trim() ||
-      !customerPhone.trim() ||
-      !customerAddress.trim()
-    ) {
-      alert(
-        "يرجى تعبئة الاسم ورقم الهاتف والعنوان"
-      )
+    addToCart(selected, 1)
+  }
+  const saveDailyOrder = async () => {
+    // الطلب اليومي أصبح يمر عبر السلة ثم يتم تأكيده منها.
+    if (selectedDailyMeal) addToCart(selectedDailyMeal, Number(dailyQuantity) || 1)
+    setDailyOrderOpen(false)
+  }
+  const saveSubscriptionRecord = async (item, customer) => {
+    const startDate = new Date()
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + Number(item.plan_days) - 1)
+    const formatDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+    const start = formatDate(startDate)
+    const end = formatDate(endDate)
+    const totalMeals = Number(item.plan_days) * Number(item.meals_per_day)
+    const address = [customer.address.trim(), customer.mapLink.trim() ? `رابط موقع Google Maps: ${customer.mapLink.trim()}` : "", customer.note?.trim() ? `ملاحظات: ${customer.note.trim()}` : ""].filter(Boolean).join("\n")
+    const payload = {
+      customer_id: null,
+      plan_id: item.plan_id,
+      customer_name: customer.name.trim(),
+      phone: customer.phone.trim(),
+      address,
+      plan_days: Number(item.plan_days),
+      meals_per_day: Number(item.meals_per_day),
+      price: Number(item.plan_price),
+      start_date: start,
+      end_date: end,
+      total_meals: totalMeals,
+      used_meals: 0,
+      remaining_meals: totalMeals,
+      tracking_token: generateTrackingToken(),
+      status: "active",
+      latitude: customer.location.latitude,
+      longitude: customer.location.longitude,
+    }
+    const { data, error } = await supabase.from("subscriptions").insert(payload).select().single()
+    if (error) throw error
+    return data
+  }
+  const confirmCheckout = async () => {
+    if (!cart.length) {
+      alert("السلة فارغة.")
       return
     }
-    setIsSaving(true)
+    if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) {
+      alert("يرجى كتابة الاسم ورقم الهاتف وعنوان السكن بالتفصيل.")
+      return
+    }
+    setCheckoutSaving(true)
     try {
-      const location =
-        await getCustomerLocation()
-async function loadProfile(setProfile, setProfileLoading) {
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      setProfile(null)
-      return
-    }
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single()
-    if (error) {
-      console.error("PROFILE LOAD ERROR:", error)
-      setProfile(null)
-      return
-    }
-    setProfile(data)
-  } catch (error) {
-    console.error("PROFILE ERROR:", error)
-    setProfile(null)
-  } finally {
-    setProfileLoading(false)
-  }
-}
-      const startDate =
-        new Date()
-      const endDate =
-        new Date(startDate)
-      endDate.setDate(
-        endDate.getDate() +
-          selectedPlan.days -
-          1
-      )
-      const formatDate =
-        (date) =>
-          `${date.getFullYear()}-${String(
-            date.getMonth() + 1
-          ).padStart(2, "0")}-${String(
-            date.getDate()
-          ).padStart(2, "0")}`
-      const start =
-        formatDate(startDate)
-      const end =
-        formatDate(endDate)
-      const totalMeals =
-        selectedPlan.days *
-        selectedPlan.meals
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("subscriptions")
-        .insert({
-          customer_id: null,
-          plan_id:
-            selectedPlan.id,
-          customer_name:
-            customerName.trim(),
-          phone:
-            customerPhone.trim(),
-          address:
-            customerAddress.trim(),
-          plan_days:
-            selectedPlan.days,
-          meals_per_day:
-            selectedPlan.meals,
-          price:
-            selectedPlan.price,
-          start_date:
-            start,
-          end_date:
-            end,
-          total_meals:
-            totalMeals,
-          used_meals: 0,
-          remaining_meals:
-            totalMeals,
-tracking_token: generateTrackingToken(),
-          status: "active",
-          latitude:
-            location.latitude,
-          longitude:
-            location.longitude,
+      const customer = {
+        name: customerName,
+        phone: customerPhone,
+        address: customerAddress,
+        mapLink: customerMapLink,
+        note: customerNote,
+        location: customerLocation,
+      }
+      const subscriptionItems = cart.filter((item) => item.kind === "subscription")
+      const dailyItems = cart.filter((item) => item.kind !== "subscription")
+      const createdSubscriptions = []
+      for (const item of subscriptionItems) {
+        const created = await saveSubscriptionRecord(item, customer)
+        createdSubscriptions.push(created)
+      }
+      if (dailyItems.length) {
+        const today = getToday()
+        const rows = dailyItems.map((item, index) => ({
+          customer_name: customer.name.trim(),
+          phone: customer.phone.trim(),
+          address: [customer.address.trim(), customer.mapLink.trim() ? `رابط موقع Google Maps: ${customer.mapLink.trim()}` : "", customerNote.trim() ? `ملاحظات: ${customerNote.trim()}` : ""].filter(Boolean).join("\n"),
+          meal_name: item.meal_name,
+          quantity: Number(item.quantity || 1),
+          order_date: today,
+          delivery_price: index === 0 ? 1 : 0,
+          total_price: Number(item.total || 0) + (index === 0 ? 1 : 0),
+          status: "pending",
+          latitude: customer.location.latitude,
+          longitude: customer.location.longitude,
+        }))
+        const { error } = await supabase.from("daily_orders").insert(rows)
+        if (error) throw error
+      }
+      if (createdSubscriptions.length) {
+        const created = createdSubscriptions[0]
+        setSubscriberData({
+          ...created,
+          trackingUrl: `${window.location.origin}/?tracking=${created.tracking_token}`,
         })
-        .select()
-        .single()
-      if (error) {
-        console.error(
-          "SUBSCRIPTION ERROR:",
-          error
-        )
-        alert(
-          "حدث خطأ أثناء تسجيل الاشتراك:\n" +
-            error.message
-        )
-        return
+        setPage("subscriber")
+      } else {
+        setPage("home")
+        alert("تم تأكيد طلبك بنجاح ❤️")
       }
-      console.log(
-        "SUBSCRIPTION CREATED:",
-        data
-      )
-      const trackingUrl =
-  `${window.location.origin}/?tracking=${data.tracking_token}`
-setSubscriberData({
-  ...data,
-  trackingUrl,
-})
-setSelectedPlan(null)
-setCustomerName("")
-setCustomerPhone("")
-setCustomerAddress("")
-setPage("subscriber")
-await loadDashboard()
+      setCart([])
+      setCartOpen(false)
+      setCheckoutOpen(false)
+      setCustomerName("")
+      setCustomerPhone("")
+      setCustomerAddress("")
+      setCustomerMapLink("")
+      setCustomerNote("")
+      setCustomerLocation({ latitude: null, longitude: null })
+      await loadDashboard()
     } catch (error) {
-      console.error(
-        "SAVE SUBSCRIPTION ERROR:",
-        error
-      )
-      alert(
-        "حدث خطأ أثناء تسجيل الاشتراك:\n" +
-          error.message
-      )
+      console.error("CHECKOUT ERROR:", error)
+      alert("تعذر تأكيد الطلب:\n" + (error?.message || "خطأ غير معروف"))
     } finally {
-      setIsSaving(false)
+      setCheckoutSaving(false)
     }
   }
-  /* ======================================================
-     OPEN DAILY ORDER
-     تم تعديلها حتى تستقبل الوجبة التي ضغط عليها المستخدم
-  ====================================================== */
-  const openDailyOrder = (
-    meal = null
-  ) => {
-    checkClosingTime()
-   
-    }
-    const todayPublicMeals = publicTodayMeals
-
-    if (todayPublicMeals.length === 0) {
-      alert("لا توجد وجبات منشورة لليوم حالياً.")
-      return
-    }
-    setDailyQuantity(1)
-    /*
-      إذا المستخدم ضغط على وجبة معينة
-      نفتح نفس الوجبة.
-      وإذا لم يتم تمرير وجبة نختار الأولى.
-    */
-    setSelectedDailyMeal(
-      meal || todayPublicMeals[0]
-    )
-    setDailyOrderOpen(true)
-  }
-  /* ======================================================
-     SAVE DAILY ORDER
-  ====================================================== */
-  const saveDailyOrder =
-    async () => {
-      
-      if (
-        !customerName.trim() ||
-        !customerPhone.trim() ||
-        !customerAddress.trim()
-      ) {
-        alert(
-          "يرجى تعبئة الاسم ورقم الهاتف والعنوان"
-        )
-        return
-      }
-      if (!selectedDailyMeal) {
-        alert(
-          "يرجى اختيار الوجبة"
-        )
-        return
-      }
-      const quantity =
-        Number(dailyQuantity)
-      if (
-        !quantity ||
-        quantity < 1
-      ) {
-        alert(
-          "يرجى اختيار عدد الوجبات"
-        )
-        return
-      }
-      setDailySaving(true)
-      try {
-        const location =
-          await getCustomerLocation()
-        const today =
-          getToday()
-        const mealPrice =
-          Number(
-            selectedDailyMeal.price ||
-              DAILY_PRICE
-          )
-        const totalPrice =
-          mealPrice *
-          quantity
-        const {
-          error,
-        } = await supabase
-          .from("daily_orders")
-          .insert({
-            customer_name:
-              customerName.trim(),
-            phone:
-              customerPhone.trim(),
-            address:
-              customerAddress.trim(),
-            meal_name:
-              selectedDailyMeal.name,
-            quantity,
-            order_date:
-              today,
-            delivery_price: 0,
-            total_price:
-              totalPrice,
-            status:
-              "pending",
-            latitude:
-              location.latitude,
-            longitude:
-              location.longitude,
-          })
-        if (error) {
-          console.error(
-            "DAILY ORDER ERROR:",
-            error
-          )
-          alert(
-            "حدث خطأ أثناء تسجيل الطلب:\n" +
-              error.message
-          )
-          return
-        }
-        alert(
-          "تم تسجيل طلبك بنجاح ❤️"
-        )
-        setCustomerName("")
-        setCustomerPhone("")
-        setCustomerAddress("")
-        setDailyQuantity(1)
-        setSelectedDailyMeal(null)
-        setDailyOrderOpen(false)
-        await loadDashboard()
-      } catch (error) {
-        console.error(error)
-        alert(
-          "حدث خطأ في الاتصال بقاعدة البيانات"
-        )
-      } finally {
-        setDailySaving(false)
-      }
-    }
   /* ======================================================
      UPDATE DAILY ORDER
   ====================================================== */
@@ -2227,106 +1889,71 @@ await loadDashboard()
   const todayPublishedItems = (publishedDailyMenu?.items || [])
     .map((item) => item.meals)
     .filter(Boolean)
-
   const tomorrowPublishedItems = (publishedTomorrowMenu?.items || [])
     .map((item) => item.meals)
     .filter(Boolean)
-
   // في يوم العطلة أو عندما لا تكون قائمة اليوم منشورة،
   // نعرض أقرب قائمة منشورة قادمة حتى لا تبقى الصفحة فارغة.
-  const publicTodayMeals =
-    todayPublishedItems.length > 0
-      ? todayPublishedItems
-      : tomorrowPublishedItems
-
+  const buildPublishedMeals = (primary = [], secondary = []) => {
+    const result = []
+    const seen = new Set()
+    for (const meal of [...primary, ...secondary]) {
+      if (!meal || seen.has(String(meal.id))) continue
+      seen.add(String(meal.id))
+      result.push(meal)
+    }
+    return result
+  }
+  const publicTodayMeals = buildPublishedMeals(todayPublishedItems, [])
+  const publicTomorrowMeals = buildPublishedMeals(tomorrowPublishedItems, [])
   const publicTodayMenuDate =
     todayPublishedItems.length > 0
       ? publishedDailyMenu?.menu_date
-      : publishedTomorrowMenu?.menu_date
-
-  const publicTodayMenuIsFallback =
-    todayPublishedItems.length === 0 &&
-    tomorrowPublishedItems.length > 0
-
-  const publicTomorrowMeals = tomorrowPublishedItems
+      : getToday()
+  const publicTodayMenuIsFallback = todayPublishedItems.length === 0
 const addToCart = (meal, quantity = 1) => {
   if (!meal) return
-
-  const price = Number(meal.price || DAILY_PRICE)
-
+  const price = DAILY_PRICE
   setCart((currentCart) => {
-    const existing = currentCart.find(
-      (item) =>
-        String(item.meal_id) === String(meal.id)
-    )
-
+    const existing = currentCart.find((item) => String(item.meal_id) === String(meal.id))
     if (existing) {
-      return currentCart.map((item) =>
-        String(item.meal_id) === String(meal.id)
-          ? {
-              ...item,
-              quantity: item.quantity + quantity,
-              total:
-                (item.quantity + quantity) *
-                item.price,
-            }
-          : item
-      )
+      const nextQuantity = Number(existing.quantity || 0) + Number(quantity || 1)
+      return currentCart.map((item) => String(item.meal_id) === String(meal.id)
+        ? { ...item, quantity: nextQuantity, total: nextQuantity * Number(item.price || price) }
+        : item)
     }
-
-    return [
-      ...currentCart,
-      {
-        meal_id: meal.id,
-        meal_name: meal.name,
-        price,
-        quantity,
-        total: price * quantity,
-        image:
-          meal.image_url ||
-          meal.image ||
-          mealFallbackImage,
-      },
-    ]
+    return [...currentCart, {
+      kind: "daily",
+      meal_id: meal.id,
+      meal_name: meal.name,
+      price,
+      quantity: Number(quantity) || 1,
+      delivery_price: 0,
+      total: price * (Number(quantity) || 1),
+      image: meal.image_url || meal.image || mealFallbackImage(0),
+    }]
   })
-
   setCartOpen(true)
 }
-
-const updateCartQuantity = (mealId, quantity) => {
+const updateCartQuantity = (cartId, quantity) => {
   const newQuantity = Number(quantity)
-
   if (newQuantity <= 0) {
-    removeFromCart(mealId)
+    removeFromCart(cartId)
     return
   }
-
-  setCart((currentCart) =>
-    currentCart.map((item) =>
-      String(item.meal_id) === String(mealId)
-        ? {
-            ...item,
-            quantity: newQuantity,
-            total: newQuantity * item.price,
-          }
-        : item
-    )
-  )
+  setCart((currentCart) => currentCart.map((item) => {
+    const id = item.cart_id || item.meal_id || item.plan_id
+    if (String(id) !== String(cartId)) return item
+    if (item.kind === "subscription") return item
+    return { ...item, quantity: newQuantity, total: newQuantity * Number(item.price || 0) }
+  }))
 }
-
-const removeFromCart = (mealId) => {
-  setCart((currentCart) =>
-    currentCart.filter(
-      (item) =>
-        String(item.meal_id) !== String(mealId)
-    )
-  )
+const removeFromCart = (cartId) => {
+  setCart((currentCart) => currentCart.filter((item) => String(item.cart_id || item.meal_id || item.plan_id) !== String(cartId)))
 }
-
 const clearCart = () => {
   setCart([])
 }
-
   /* ======================================================
      RETURN
   ====================================================== */
@@ -2345,7 +1972,8 @@ onOpenCart={() => setCartOpen(true)}
 {page === "subscriber" && (
   <SubscriberPage
     subscription={subscriberData}
-    availableMeals={publicTomorrowMeals}
+    availableMeals={publicTodayMeals}
+    tomorrowAvailableMeals={publicTomorrowMeals}
     onClose={() => setPage("home")}
   />
 )}
@@ -2364,6 +1992,7 @@ onOpenCart={() => setCartOpen(true)}
           onDaily={() =>
             setPage("daily")
           }
+          onAddToCart={addToCart}
         />
       )}
       {/* ==================================================
@@ -2373,9 +2002,7 @@ onOpenCart={() => setCartOpen(true)}
         "subscriptions" && (
         <SubscriptionsPage
           plans={plans}
-          onSelect={
-            setSelectedPlan
-          }
+          onSelect={setSelectedPlan}
         />
       )}
 {/* ==================================================
@@ -2384,20 +2011,8 @@ onOpenCart={() => setCartOpen(true)}
 {selectedPlan && (
   <SubscriptionPopup
     selectedPlan={selectedPlan}
-    customerName={customerName}
-    setCustomerName={setCustomerName}
-    customerPhone={customerPhone}
-    setCustomerPhone={setCustomerPhone}
-    customerAddress={customerAddress}
-    setCustomerAddress={setCustomerAddress}
-    isSaving={isSaving}
-    onSave={saveSubscription}
-    onClose={() => {
-      setSelectedPlan(null)
-      setCustomerName("")
-      setCustomerPhone("")
-      setCustomerAddress("")
-    }}
+    onAddToCart={addSubscriptionToCart}
+    onClose={() => setSelectedPlan(null)}
   />
 )}
       {/* ==================================================
@@ -2409,9 +2024,7 @@ onOpenCart={() => setCartOpen(true)}
           meals={publicTodayMeals}
           menuDate={publicTodayMenuDate}
           menuIsFallback={publicTodayMenuIsFallback}
-          ordersClosed={
-            ordersClosed
-          }
+          ordersClosed={false}
           onOrder={
             openDailyOrder
           }
@@ -2549,7 +2162,6 @@ onOpenCart={() => setCartOpen(true)}
   setCheckoutOpen(true)
   
 }}
-
   />
 )}
 {checkoutOpen && (
@@ -2562,13 +2174,19 @@ onOpenCart={() => setCartOpen(true)}
     setCustomerPhone={setCustomerPhone}
     customerAddress={customerAddress}
     setCustomerAddress={setCustomerAddress}
+    customerMapLink={customerMapLink}
+    setCustomerMapLink={setCustomerMapLink}
+    customerNote={customerNote}
+    setCustomerNote={setCustomerNote}
+    onUseLocation={useCustomerLocation}
+    customerLocation={customerLocation}
     checkoutSaving={checkoutSaving}
-    onClose={() => setCheckoutOpen(false)}
-    onConfirm={() => {
-      alert("سيتم ربط تأكيد الطلب بقاعدة البيانات في الخطوة التالية.")
-    }}
+    onClose={() => { setCheckoutOpen(false); setCustomerLocation({ latitude: null, longitude: null }) }}
+    onConfirm={confirmCheckout}
   />
 )}
+      <button className="feedback-float" type="button" onClick={() => setFeedbackOpen(true)}>💬 ملاحظاتك تهمنا</button>
+      {feedbackOpen && <FeedbackPopup onClose={() => setFeedbackOpen(false)} />}
       {/* ==================================================
           FOOTER
       ================================================== */}
@@ -2586,13 +2204,20 @@ onOpenCart={() => setCartOpen(true)}
           </div>
         </div>
         <div className="brand-footer-grid">
-          {brandImages.meals.map((src, index) => (
-            <img
-              key={src}
-              src={src}
-              alt={`طبق من مطبخ شيف نور ${index + 1}`}
-            />
-          ))}
+          {Array.from({ length: 6 }).map((_, index) => {
+            const src = brandImages.meals?.[index] || FOOTER_MEAL_IMAGES[index] || mealFallbackImage(index)
+            return (
+              <img
+                key={`footer-meal-${index}`}
+                src={src}
+                alt={`طبق من مطبخ شيف نور ${index + 1}`}
+                onError={(event) => {
+                  const fallback = mealFallbackImage(index)
+                  if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback
+                }}
+              />
+            )
+          })}
         </div>
         <p className="brand-footer-copy">
           © 2026 Chef Noor Cuisine — جميع الحقوق محفوظة
@@ -2790,7 +2415,6 @@ function useInView(threshold = 0.16) {
   }, [threshold])
   return [ref, visible]
 }
-
 function Reveal({ className = "", children, as: Tag = "div" }) {
   const [ref, visible] = useInView()
   return (
@@ -2802,7 +2426,6 @@ function Reveal({ className = "", children, as: Tag = "div" }) {
     </Tag>
   )
 }
-
 function AnimatedCounter({ end, suffix = "", duration = 1400 }) {
   const [ref, visible] = useInView(0.4)
   const [value, setValue] = useState(0)
@@ -2826,19 +2449,18 @@ function AnimatedCounter({ end, suffix = "", duration = 1400 }) {
     </strong>
   )
 }
-
 /* ======================================================
    HOME
 ====================================================== */
 function HomePage({
   onSubscriptions,
   onDaily,
+  onAddToCart,
   plans = [],
   meals = [],
 }) {
-  const visibleMeals = (meals || []).filter(Boolean).slice(0, 6)
-  const featuredPlans = (plans || []).filter((plan) => plan.days === 26).slice(0, 3)
-
+  const visibleMeals = (meals || []).filter(Boolean)
+  const featuredPlans = (plans || []).slice(0, 6)
   return (
     <div className="home-page">
       <section className="brand-hero">
@@ -2859,20 +2481,19 @@ function HomePage({
               شاهد وجبات اليوم
             </button>
           </div>
+          <div className="hero-float-badges hero-badges-inline">
+            <span>طبخ يومي</span>
+            <span>مكونات طازجة</span>
+            <span>توصيل يومي</span>
+          </div>
         </div>
         <button className="hero-float-cta" onClick={onSubscriptions}>
           ابدأ اشتراكك
         </button>
-        <div className="hero-float-badges">
-          <span>طبخ يومي</span>
-          <span>مكونات طازجة</span>
-          <span>توصيل يومي</span>
-        </div>
         <div className="hero-circle">
           <img src={brandImages.circle} alt="طبق اليوم" />
         </div>
       </section>
-
       <Reveal as="section" className="home-section meals-overlap">
         <div className="home-heading">
           <small>من السفرة إلى العدسة</small>
@@ -2896,7 +2517,7 @@ function HomePage({
                 <p>{meal.description || "وجبة منزلية طازجة محضّرة بعناية."}</p>
                 <div className="meal-bottom">
                   <span className="meal-price">{meal.price || DAILY_PRICE} د.أ</span>
-                  <button className="home-secondary" onClick={onDaily}>التفاصيل</button>
+                  <button className="home-secondary" onClick={() => onAddToCart?.(meal)}>أضف للسلة</button>
                 </div>
               </div>
             </article>
@@ -2905,7 +2526,6 @@ function HomePage({
           )}
         </div>
       </Reveal>
-
       <Reveal as="section" className="home-section alt">
         <div className="home-heading">
           <small>اشترك وارتاح</small>
@@ -2931,7 +2551,6 @@ function HomePage({
           )) : <div className="home-empty">باقات الاشتراك متاحة من صفحة الاشتراكات.</div>}
         </div>
       </Reveal>
-
       <Reveal as="section" className="home-section">
         <div className="home-heading">
           <small>أرقام المطبخ</small>
@@ -2943,12 +2562,12 @@ function HomePage({
             <span>يوم كحد أقصى للاشتراك المرن</span>
           </div>
           <div className="stat">
-            <AnimatedCounter end={3} />
-            <span>وجبات يومية حسب الباقة</span>
+            <AnimatedCounter end={4} />
+            <span>وجبات يومية متاحة في القائمة</span>
           </div>
           <div className="stat">
-            <AnimatedCounter end={4} suffix=":00" />
-            <span>موعد إغلاق الطلبات اليومية</span>
+            <AnimatedCounter end={24} suffix="/7" />
+            <span>الطلبات مفتوحة طوال اليوم</span>
           </div>
           <div className="stat">
             <AnimatedCounter end={100} suffix="%" />
@@ -2956,7 +2575,6 @@ function HomePage({
           </div>
         </div>
       </Reveal>
-
       <Reveal as="section" className="home-section alt story-section">
         <div className="story">
           <div className="story-image">
@@ -2964,11 +2582,11 @@ function HomePage({
           </div>
           <div className="story-copy">
             <small>Our Story</small>
-            <h2>قصتنا… أكل يشبه البيت</h2>
+            <h2>قصتنا… من مطبخ بيتي إلى سفرتك</h2>
             <p>
-              بدأت شيف نور من فكرة بسيطة: وجبة طيبة، مكونات واضحة، وتحضير يومي
-              باهتمام. نطبخ كما يُطبخ في البيت، ونقدّم التجربة بهوية براند عصرية —
-              سهلة الطلب، دافئة المذاق، وقريبة منك كل يوم.
+              بدأت شيف نور من مطبخ بيتي صغير، ومن حب حقيقي للأكل الذي يجمع الناس حول السفرة.
+              كل وجبة تُحضَّر يومياً بعناية، بطعم دافئ ومكونات واضحة، لنوصّل لك إحساس
+              الأكل البيتي بطريقة مرتبة وسهلة، أينما كنت.
             </p>
             <button className="home-primary" onClick={onSubscriptions}>
               تعرّف على الاشتراكات
@@ -2976,7 +2594,6 @@ function HomePage({
           </div>
         </div>
       </Reveal>
-
       <Reveal as="section" className="home-cta">
         <img src={brandImages.cta} alt="" className="home-cta-photo" />
         <div className="home-cta-copy">
@@ -3009,16 +2626,8 @@ function SubscriptionsPage({
           تشمل التوصيل.
         </p>
       </div>
-      <SubscriptionPeriod
-        days={26}
-        plans={plans}
-        onSelect={onSelect}
-      />
-      <SubscriptionPeriod
-        days={20}
-        plans={plans}
-        onSelect={onSelect}
-      />
+      <SubscriptionPeriod days={26} plans={plans} onSelect={onSelect} />
+      <SubscriptionPeriod days={20} plans={plans} onSelect={onSelect} />
     </section>
   )
 }
@@ -3073,7 +2682,6 @@ function DailyPage({
         }
       )
     : ""
-
   return (
     
     <section className="section daily-section">
@@ -3085,12 +2693,6 @@ function DailyPage({
           🍲 وجبات اليوم
         </h2>
         <p>
-          <button
-  className="main-btn"
-  onClick={() => onAddToCart(meal)}
->
-  🛒 أضف للسلة
-</button>
           {menuIsFallback
             ? `القائمة المنشورة القادمة — ${formattedMenuDate}`
             : formattedMenuDate
@@ -3152,14 +2754,9 @@ function DailyPage({
                   </div>
                   <button
                     className="main-btn"
-                    disabled={
-                      ordersClosed
-                    }
                     onClick={() => onAddToCart(meal)}
                   >
-                    {ordersClosed
-                      ? "🔴 انتهى وقت الطلب"
-                      : "اطلب هذه الوجبة"}
+                    أضف للسلة
                   </button>
                 </div>
               </div>
@@ -3168,29 +2765,11 @@ function DailyPage({
         </div>
       )}
       <div className="closing">
-        <span>⏰</span>
+        <span>🟢</span>
         <div>
-          <strong>
-            {ordersClosed
-              ? "الطلبات مغلقة"
-              : "الطلبات مفتوحة"}
-          </strong>
-          <p>
-            يتم إغلاق الطلبات
-            الساعة 4:00 عصراً
-          </p>
+          <strong>الطلبات مفتوحة طوال اليوم</strong>
+          <p>يمكنك الإضافة إلى السلة وتأكيد طلبك في أي وقت.</p>
         </div>
-        <b
-          className={
-            ordersClosed
-              ? "closed"
-              : "open"
-          }
-        >
-          {ordersClosed
-            ? "🔴 مغلق"
-            : "🟢 مفتوح"}
-        </b>
       </div>
     </section>
   )
@@ -3244,7 +2823,6 @@ function AdminDailyMenuScreen({ dailyMenu, loading, onRefresh }) {
     </div>
   )
 }
-
 /* ======================================================
    ADMIN
 ====================================================== */
@@ -3573,11 +3151,9 @@ function MealsScreen({
       year: "numeric",
     })
   }
-
   const availableMeals = meals.filter(
     (meal) => meal.active && meal.is_available
   )
-
   return (
     <div className="screen">
       <ScreenHeader
@@ -3586,7 +3162,6 @@ function MealsScreen({
         subtitle="إدارة وجبات 30 يوم — 4 وجبات افتراضية مع إمكانية الزيادة أو النقصان"
         count={menuDays.length === 30 ? 30 : 0}
       />
-
       <div
         style={{
           display: "flex",
@@ -3611,7 +3186,6 @@ function MealsScreen({
             🍲 مكتبة الوجبات ({meals.length})
           </button>
         </div>
-
         {menuView === "planner" && (
           <div style={{ fontWeight: 700 }}>
             {loadingMenuPlan
@@ -3622,7 +3196,6 @@ function MealsScreen({
           </div>
         )}
       </div>
-
       {menuView === "planner" ? (
         <>
           <div className="modern-box" style={{ marginBottom: "16px" }}>
@@ -3642,7 +3215,6 @@ function MealsScreen({
               عدّل أي وجبة من القائمة مباشرة. احفظ اليوم بعد التعديل، ثم انشره عندما يكون جاهزًا.
             </p>
           </div>
-
           {loadingMenuPlan ? (
             <div className="empty">جاري تجهيز جدول الـ30 يوم...</div>
           ) : menuDays.length !== 30 ? (
@@ -3702,7 +3274,6 @@ function MealsScreen({
                             </div>
                           )}
                         </td>
-
                         <td style={{ ...tdStyle, minWidth: "520px" }}>
                           {day.is_holiday ? (
                             <span style={{ fontWeight: 800, color: "#b42318" }}>🔴 عطلة الجمعة</span>
@@ -3738,7 +3309,6 @@ function MealsScreen({
                             </div>
                           )}
                         </td>
-
                         <td style={tdStyle}>
                           <span
                             className={
@@ -3751,7 +3321,6 @@ function MealsScreen({
                             {day.is_published ? "منشور" : "مسودة"}
                           </span>
                         </td>
-
                         <td style={{ ...tdStyle, minWidth: "190px" }}>
                           <div style={{ display: "grid", gap: "7px" }}>
                             <button
@@ -3801,7 +3370,6 @@ function MealsScreen({
             <button className="main-btn" onClick={onAdd}>➕ إضافة وجبة</button>
             <button className="refresh-btn" onClick={onRefresh}>🔄 تحديث الوجبات</button>
           </div>
-
           {loading ? (
             <div className="empty">جاري تحميل الوجبات...</div>
           ) : meals.length === 0 ? (
@@ -3850,7 +3418,6 @@ function MealsScreen({
     </div>
   )
 }
-
 const thStyle = {
   padding: "13px 10px",
   background: "#f7f7f7",
@@ -3859,14 +3426,12 @@ const thStyle = {
   whiteSpace: "nowrap",
   fontWeight: 800,
 }
-
 const tdStyle = {
   padding: "10px 8px",
   borderBottom: "1px solid #eeeeee",
   verticalAlign: "middle",
   textAlign: "center",
 }
-
 const selectStyle = {
   width: "100%",
   minWidth: "190px",
@@ -3877,7 +3442,6 @@ const selectStyle = {
   fontFamily: "inherit",
   fontSize: "14px",
 }
-
 /* ======================================================
    DAILY ORDER POPUP
 ====================================================== */
@@ -3891,6 +3455,8 @@ function DailyOrderPopup({
   setCustomerPhone,
   customerAddress,
   setCustomerAddress,
+  onUseLocation,
+  customerLocation,
   dailyQuantity,
   setDailyQuantity,
   dailySaving,
@@ -4008,16 +3574,19 @@ function DailyOrderPopup({
           }
         />
         <textarea
-          placeholder="عنوان التوصيل"
-          value={
-            customerAddress
-          }
-          onChange={(e) =>
-            setCustomerAddress(
-              e.target.value
-            )
-          }
+          placeholder="العنوان بالتفصيل: المنطقة، الشارع، البناية، الطابق، الشقة"
+          value={customerAddress}
+          onChange={(e) => setCustomerAddress(e.target.value)}
         />
+        <div className="location-helper">
+          <button type="button" className="secondary-btn" onClick={onUseLocation}>
+            📍 {customerLocation?.latitude ? "تم تحديد الموقع ✓" : "تحديد موقعي على الخريطة"}
+          </button>
+          <a href={customerLocation?.latitude ? `https://www.google.com/maps?q=${customerLocation.latitude},${customerLocation.longitude}` : "https://www.google.com/maps"} target="_blank" rel="noreferrer">
+            فتح Google Maps ↗
+          </a>
+          <small>الموقع اختياري، وإذا لم تحدده يكفي كتابة عنوان السكن بالتفصيل.</small>
+        </div>
         <label className="quantity-label">
           عدد الوجبات
         </label>
@@ -4075,6 +3644,12 @@ function CheckoutPopup({
   setCustomerPhone,
   customerAddress,
   setCustomerAddress,
+  customerMapLink,
+  setCustomerMapLink,
+  customerNote,
+  setCustomerNote,
+  onUseLocation,
+  customerLocation,
   checkoutSaving,
   onConfirm,
   onClose,
@@ -4082,88 +3657,39 @@ function CheckoutPopup({
   return (
     <div className="popup-background">
       <div className="popup checkout-popup">
-
-        <button
-          className="close"
-          onClick={onClose}
-        >
-          ×
-        </button>
-
-        <h2>🛒 إكمال الطلب</h2>
-
-        <p className="checkout-subtitle">
-          راجع طلبك وأدخل بيانات التوصيل
-        </p>
-
+        <button className="close" onClick={onClose}>×</button>
+        <h2>🛒 تأكيد الطلب</h2>
+        <p className="checkout-subtitle">راجع السلة، ثم أدخل بيانات التوصيل والملاحظات.</p>
         <div className="checkout-items">
-          {cart.map((item) => (
-            <div
-              className="checkout-item"
-              key={item.meal_id}
-            >
+          {cart.map((item, index) => (
+            <div className="checkout-item" key={item.cart_id || `${item.meal_id || item.plan_id}-${index}`}>
               <div>
                 <strong>{item.meal_name}</strong>
-                <small>
-                  {item.quantity} ×{" "}
-                  {Number(item.price).toFixed(2)} د.أ
-                </small>
+                <small>{item.kind === "subscription" ? "باقة اشتراك — التوصيل شامل" : `${item.quantity} × ${Number(item.price).toFixed(2)} د.أ`}</small>
+                {item.note && <small>📝 {item.note}</small>}
               </div>
-
-              <strong>
-                {Number(item.total).toFixed(2)} د.أ
-              </strong>
+              <strong>{Number(item.total).toFixed(2)} د.أ</strong>
             </div>
           ))}
         </div>
-
         <div className="checkout-total">
-          <span>إجمالي الوجبات</span>
-          <strong>
-            {Number(subtotal).toFixed(2)} د.أ
-          </strong>
+          <span>{cart.some((item) => item.kind !== "subscription") ? "الإجمالي شامل التوصيل" : "الإجمالي — الباقة شاملة التوصيل"}</span>
+          <strong>{Number(subtotal).toFixed(2)} د.أ</strong>
         </div>
-
-        <div className="checkout-delivery-note">
-          🚚 رسوم التوصيل غير مشمولة
+        <input type="text" placeholder="الاسم الكامل" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+        <input type="tel" placeholder="رقم الهاتف" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+        <textarea placeholder="تفاصيل السكن: المنطقة، الشارع، رقم البناية، الطابق، رقم الشقة وأي تفاصيل تساعد السائق" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+        <div className="location-helper">
+          <button type="button" className="secondary-btn" onClick={onUseLocation}>📍 تحديد موقعي تلقائياً</button>
+          <a href="https://www.google.com/maps" target="_blank" rel="noreferrer">فتح Google Maps ↗</a>
+          {customerLocation?.latitude && <a href={`https://www.google.com/maps?q=${customerLocation.latitude},${customerLocation.longitude}`} target="_blank" rel="noreferrer">عرض موقعي المحدد</a>}
+          <small>يمكنك فتح Google Maps، إسقاط دبوس على موقعك، ثم نسخ رابط المشاركة ولصقه في الخانة التالية. الموقع اختياري، والعنوان التفصيلي يكفي.</small>
         </div>
-
-        <input
-          type="text"
-          placeholder="الاسم الكامل"
-          value={customerName}
-          onChange={(e) =>
-            setCustomerName(e.target.value)
-          }
-        />
-
-        <input
-          type="tel"
-          placeholder="رقم الهاتف"
-          value={customerPhone}
-          onChange={(e) =>
-            setCustomerPhone(e.target.value)
-          }
-        />
-
-        <textarea
-          placeholder="منطقة التوصيل والعنوان بالتفصيل"
-          value={customerAddress}
-          onChange={(e) =>
-            setCustomerAddress(e.target.value)
-          }
-        />
-
-        <button
-          className="confirm"
-          onClick={onConfirm}
-          disabled={checkoutSaving || cart.length === 0}
-        >
-          {checkoutSaving
-            ? "جاري تسجيل الطلب..."
-            : "✅ تأكيد وإرسال الطلب"}
+        <input type="url" placeholder="رابط موقعك من Google Maps (اختياري)" value={customerMapLink} onChange={(e) => setCustomerMapLink(e.target.value)} />
+        <textarea placeholder="ملاحظات الطلب (اختياري): كمية الطعام، الكربوهيدرات، مكوّنات لا ترغب بها، أو أي طلب خاص." value={customerNote} onChange={(e) => setCustomerNote(e.target.value)} />
+        <button className="confirm" onClick={onConfirm} disabled={checkoutSaving || cart.length === 0}>
+          {checkoutSaving ? "جاري تأكيد الطلب..." : "✅ تأكيد وإرسال الطلب"}
         </button>
-
       </div>
     </div>
   )
@@ -5600,97 +5126,27 @@ function Plan({
 ====================================================== */
 function SubscriptionPopup({
   selectedPlan,
-  customerName,
-  setCustomerName,
-  customerPhone,
-  setCustomerPhone,
-  customerAddress,
-  setCustomerAddress,
-  isSaving,
-  onSave,
+  onAddToCart,
   onClose,
 }) {
+  if (!selectedPlan) return null
   return (
     <div className="popup-background">
-      <div className="popup">
-        <button
-          className="close"
-          onClick={onClose}
-        >
-          ×
-        </button>
-        <h2>
-          تأكيد الاشتراك
-        </h2>
+      <div className="popup subscription-choice-popup">
+        <button className="close" onClick={onClose}>×</button>
+        <h2>📦 باقة الاشتراك</h2>
         <div className="selected">
-          <h3>
-            اشتراك{" "}
-            {
-              selectedPlan.days
-            }{" "}
-            يوم
-          </h3>
-          <p>
-            {
-              selectedPlan.meals
-            }{" "}
-            وجبة يومياً
-          </p>
-          <strong>
-            {
-              selectedPlan.price
-            }{" "}
-            د.أ
-          </strong>
-          <small>
-            🚚 التوصيل شامل
-          </small>
+          <h3>اشتراك {selectedPlan.days} يوم</h3>
+          <p>{selectedPlan.meals} وجبة يومياً</p>
+          <strong>{Number(selectedPlan.price).toFixed(2)} د.أ</strong>
+          <small>🚚 شامل التوصيل</small>
         </div>
-        <input
-          type="text"
-          placeholder="الاسم الكامل"
-          value={
-            customerName
-          }
-          onChange={(e) =>
-            setCustomerName(
-              e.target.value
-            )
-          }
-        />
-        <input
-          type="tel"
-          placeholder="رقم الهاتف"
-          value={
-            customerPhone
-          }
-          onChange={(e) =>
-            setCustomerPhone(
-              e.target.value
-            )
-          }
-        />
-        <textarea
-          placeholder="عنوان التوصيل"
-          value={
-            customerAddress
-          }
-          onChange={(e) =>
-            setCustomerAddress(
-              e.target.value
-            )
-          }
-        />
-        <button
-          className="confirm"
-          onClick={onSave}
-          disabled={
-            isSaving
-          }
-        >
-          {isSaving
-            ? "جاري التسجيل..."
-            : "تأكيد الاشتراك"}
+        <div className="subscription-popup-note">
+          <strong>بعد تأكيد الطلب</strong>
+          <p>سيظهر لك رابط اشتراكك الخاص، ومن خلاله تختار كل يوم فقط من الوجبات اليومية المنشورة من مطبخ شيف نور.</p>
+        </div>
+        <button className="confirm" onClick={() => onAddToCart({ plan: selectedPlan })}>
+          إضافة الباقة إلى السلة 🛒
         </button>
       </div>
     </div>
@@ -5916,6 +5372,56 @@ function EditSubscriptionPopup({
 /* ======================================================
    EXPORT
 ====================================================== */
+function FeedbackPopup({ onClose }) {
+  const [name, setName] = useState("")
+  const [rating, setRating] = useState(5)
+  const [message, setMessage] = useState("")
+  const [saving, setSaving] = useState(false)
+  const submit = async () => {
+    if (!message.trim()) {
+      alert("اكتب ملاحظتك أولاً، وشكراً لمساعدتنا على التطور ❤️")
+      return
+    }
+    setSaving(true)
+    const payload = { customer_name: name.trim(), rating: Number(rating), message: message.trim() }
+    try {
+      const { error } = await supabase.from("feedback").insert(payload)
+      if (error) throw error
+      alert("شكراً لك ❤️ وصلت ملاحظتك بنجاح.")
+    } catch (error) {
+      console.error("FEEDBACK ERROR:", error)
+      const key = "chefNoorFeedback"
+      const current = JSON.parse(localStorage.getItem(key) || "[]")
+      current.push({ ...payload, created_at: new Date().toISOString() })
+      localStorage.setItem(key, JSON.stringify(current))
+      alert("شكراً لك ❤️ تم حفظ ملاحظتك، وسنستفيد منها لتطوير الخدمة.")
+    } finally {
+      setSaving(false)
+      setMessage("")
+      onClose()
+    }
+  }
+  return (
+    <div className="popup-background">
+      <div className="popup feedback-popup">
+        <button className="close" onClick={onClose}>×</button>
+        <h2>💬 ملاحظاتك تهمنا</h2>
+        <p>شاركنا رأيك عن الأكل، الطلب، التوصيل أو أي فكرة تحب نشوفها في مطبخ شيف نور.</p>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="اسمك (اختياري)" />
+        <label>تقييمك</label>
+        <select value={rating} onChange={(e) => setRating(e.target.value)}>
+          <option value={5}>★★★★★ ممتاز</option>
+          <option value={4}>★★★★ جيد جداً</option>
+          <option value={3}>★★★ جيد</option>
+          <option value={2}>★★ يحتاج تحسين</option>
+          <option value={1}>★ يحتاج تحسين كبير</option>
+        </select>
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="اكتب ملاحظتك أو اقتراحك هنا..." />
+        <button className="confirm" disabled={saving} onClick={submit}>{saving ? "جاري الإرسال..." : "إرسال الملاحظة ❤️"}</button>
+      </div>
+    </div>
+  )
+}
 function CartPopup({
   cart,
   subtotal,
@@ -5928,139 +5434,64 @@ function CartPopup({
   return (
     <div className="popup-background">
       <div className="popup cart-popup">
-
-        <button className="close" onClick={onClose}>
-          ×
-        </button>
-
+        <button className="close" onClick={onClose}>×</button>
         <div className="cart-header">
           <span className="cart-icon">🛒</span>
-
           <div>
             <h2>سلة الطلب</h2>
-            <p>
-              {cart.length === 0
-                ? "السلة فارغة"
-                : `${cart.length} وجبات مختارة`}
-            </p>
+            <p>{cart.length ? `${cart.length} عنصر في السلة` : "السلة فارغة"}</p>
           </div>
         </div>
-
         {cart.length === 0 ? (
           <div className="empty-cart">
             <div>🛒</div>
             <h3>السلة فارغة</h3>
-            <p>اختر وجباتك اليومية وأضفها إلى السلة.</p>
-
-            <button
-              className="main-btn"
-              onClick={onClose}
-            >
-              متابعة التصفح
-            </button>
+            <p>اختر وجباتك أو باقتك وأضفها إلى السلة.</p>
+            <button className="main-btn" onClick={onClose}>متابعة التصفح</button>
           </div>
         ) : (
           <>
             <div className="cart-items">
-              {cart.map((item) => (
-                <div
-                  className="cart-item"
-                  key={item.meal_id}
-                >
-                  <img
-                    src={item.image}
-                    alt={item.meal_name}
-                  />
-
-                  <div className="cart-item-info">
-                    <h3>{item.meal_name}</h3>
-
-                    <span>
-                      {item.price.toFixed(2)} د.أ / وجبة
-                    </span>
-
-                    <strong>
-                      {item.total.toFixed(2)} د.أ
-                    </strong>
+              {cart.map((item, index) => {
+                const cartId = item.cart_id || item.meal_id || item.plan_id || index
+                const isSubscription = item.kind === "subscription"
+                return (
+                  <div className="cart-item" key={cartId}>
+                    <img src={item.image || mealFallbackImage(index)} alt={item.meal_name} />
+                    <div className="cart-item-info">
+                      <h3>{item.meal_name}</h3>
+                      {isSubscription ? (
+                        <>
+                          <span>{item.plan_days} يوم • {item.meals_per_day} وجبة يومياً</span>
+                          {item.mealSelections?.length > 0 && <small>وجبات اليوم الأول: {item.mealSelections.map((m) => `${m.meal_name} × ${m.quantity}`).join("، ")}</small>}
+                          {item.note && <small>📝 {item.note}</small>}
+                        </>
+                      ) : (
+                        <span>{Number(item.price).toFixed(2)} د.أ / وجبة — التوصيل غير شامل</span>
+                      )}
+                      <strong>{Number(item.total).toFixed(2)} د.أ</strong>
+                    </div>
+                    {!isSubscription && (
+                      <div className="cart-quantity">
+                        <button onClick={() => onUpdateQuantity(cartId, item.quantity - 1)}>−</button>
+                        <span>{item.quantity}</span>
+                        <button onClick={() => onUpdateQuantity(cartId, item.quantity + 1)}>+</button>
+                      </div>
+                    )}
+                    <button className="cart-remove" onClick={() => onRemove(cartId)}>حذف</button>
                   </div>
-
-                  <div className="cart-quantity">
-                    <button
-                      onClick={() =>
-                        onUpdateQuantity(
-                          item.meal_id,
-                          item.quantity - 1
-                        )
-                      }
-                    >
-                      −
-                    </button>
-
-                    <span>{item.quantity}</span>
-
-                    <button
-                      onClick={() =>
-                        onUpdateQuantity(
-                          item.meal_id,
-                          item.quantity + 1
-                        )
-                      }
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <button
-                    className="cart-remove"
-                    onClick={() =>
-                      onRemove(item.meal_id)
-                    }
-                  >
-                    حذف
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
-
             <div className="cart-summary">
-              <div>
-                <span>عدد الوجبات</span>
-                <strong>
-                  {cart.reduce(
-                    (sum, item) =>
-                      sum + Number(item.quantity),
-                    0
-                  )}
-                </strong>
-              </div>
-
-              <div>
-                <span>التوصيل</span>
-                <strong>يحدد عند التأكيد</strong>
-              </div>
-
-              <div className="cart-total">
-                <span>الإجمالي</span>
-                <strong>
-                  {subtotal.toFixed(2)} د.أ
-                </strong>
-              </div>
+              <div><span>العناصر</span><strong>{cart.length}</strong></div>
+              <div><span>توصيل الاشتراك</span><strong>شامل</strong></div>
+              {cart.some((item) => item.kind !== "subscription") && <div><span>توصيل الوجبات اليومية</span><strong>1.00 د.أ</strong></div>}
+              <div className="cart-total"><span>الإجمالي</span><strong>{Number(subtotal).toFixed(2)} د.أ</strong></div>
             </div>
-
             <div className="cart-actions">
-              <button
-                className="secondary-btn"
-                onClick={onClear}
-              >
-                إفراغ السلة
-              </button>
-
-              <button
-                className="main-btn"
-                onClick={onCheckout}
-              >
-                متابعة وإكمال الطلب
-              </button>
+              <button className="secondary-btn" onClick={onClear}>إفراغ السلة</button>
+              <button className="main-btn" onClick={onCheckout}>متابعة وإكمال الطلب</button>
             </div>
           </>
         )}
