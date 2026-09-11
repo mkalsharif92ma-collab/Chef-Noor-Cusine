@@ -80,11 +80,32 @@ function SubscriberPage({
   const [savingMeals, setSavingMeals] = useState(false)
   const [dailyNote, setDailyNote] = useState("")
   const today = new Date()
-  const todayDate = getToday()
-  const date = today.toLocaleDateString("ar-JO", { day: "numeric", month: "long", year: "numeric" })
-  const weekday = today.toLocaleDateString("ar-JO", { weekday: "long" })
-  const isFriday = today.getDay() === 5
-  const formatDate = (dateValue) => `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}-${String(dateValue.getDate()).padStart(2, "0")}`
+const todayDate = getToday()
+
+const tomorrow = new Date(today)
+tomorrow.setDate(today.getDate() + 1)
+
+const tomorrowDate = formatDate(tomorrow)
+
+const date = today.toLocaleDateString("ar-JO", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+})
+
+const weekday = today.toLocaleDateString("ar-JO", {
+  weekday: "long",
+})
+
+const tomorrowWeekday = tomorrow.toLocaleDateString("ar-JO", {
+  weekday: "long",
+})
+
+const isFriday = today.getDay() === 5
+
+function formatDate(dateValue) {
+  return `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}-${String(dateValue.getDate()).padStart(2, "0")}`
+}
   useEffect(() => {
     const loadDailyMeals = async () => {
       if (!subscription?.id) return
@@ -105,12 +126,18 @@ function SubscriberPage({
         }
         const rows = allRows || []
         const todayRows = rows.filter((item) => item.meal_date === todayDate)
-        setDailyMeals(todayRows)
-        // المشترك يختار فقط من قائمة اليوم الحالية، ولا نرحّله تلقائياً للغد.
-        const selectionDateValue = todayDate
-        setSelectionDate(selectionDateValue)
-        setSelectionMeals((availableMeals || []).filter(Boolean))
-        const selectedRows = rows.filter((item) => item.meal_date === selectionDateValue)
+setDailyMeals(todayRows)
+
+// المشترك يختار وجبات الغد مسبقاً.
+const selectionDateValue = tomorrowDate
+setSelectionDate(selectionDateValue)
+
+// نعرض للمشترك وجبات الغد المنشورة من الإدارة.
+setSelectionMeals((tomorrowAvailableMeals || []).filter(Boolean))
+
+const selectedRows = rows.filter(
+  (item) => item.meal_date === selectionDateValue
+)
         const selected = {}
         selectedRows.forEach((item) => {
           if (item.meal_id) selected[item.meal_id] = Number(item.quantity || 1)
@@ -129,7 +156,7 @@ function SubscriberPage({
       }
     }
     loadDailyMeals()
-  }, [subscription?.id, todayDate, availableMeals])
+  }, [subscription?.id, todayDate, tomorrowDate, tomorrowAvailableMeals])
   const [subscriptionStats, setSubscriptionStats] = useState({ used: 0, remaining: 0 })
   const selectionDateObject = selectionDate ? new Date(`${selectionDate}T00:00:00`) : new Date()
   const selectionText = selectionDateObject.toLocaleDateString("ar-JO", { day: "numeric", month: "long", year: "numeric" })
@@ -292,7 +319,8 @@ function SubscriberPage({
         </div>
         <div className="subscriber-meal-selection">
           <div className="section-title">
-            <small>اختيار الوجبات اليومية</small>
+            <small>اختيار وجبات الغد</small>
+<h3>اختر وجبات {selectionWeekday}</h3>
             <h3>اختر وجبات {selectionWeekday}</h3>
             <p>{selectionText}</p>
           </div>
@@ -301,7 +329,9 @@ function SubscriberPage({
             <span>المتبقي للاختيار: {selectionRemaining}</span>
           </div>
           {selectionMeals.length === 0 ? (
-            <div className="empty-state">لا توجد وجبات منشورة لهذا اليوم حالياً.</div>
+            <div className="empty-state">
+  لا توجد وجبات منشورة لـ {selectionWeekday} حالياً.
+</div>
           ) : (
             <div className="subscriber-meals-grid">
               {selectionMeals.map((meal, index) => {
