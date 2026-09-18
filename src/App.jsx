@@ -1558,9 +1558,12 @@ setSubscriberDailyMeals(
       }
       const { data, error } = await supabase
         .from("site_settings")
-        .upsert(payload, { onConflict: "id" })
+        .upsert(payload, { onConflict: "id", ignoreDuplicates: false })
         .select("*")
         .single()
+      if (error?.code === "PGRST116") {
+        throw new Error("تعذر قراءة إعدادات الموقع بعد الحفظ. تأكد من صلاحيات جدول site_settings.")
+      }
       if (error) throw error
       setSiteSettings({ ...DEFAULT_SITE_SETTINGS, ...data, footer_meal_images: Array.isArray(data.footer_meal_images) ? data.footer_meal_images : [] })
       alert("تم حفظ بيانات الاتصال وروابط التواصل وإعدادات الموقع بنجاح ✅")
@@ -1608,7 +1611,7 @@ setSubscriberDailyMeals(
       loadPublishedMenu()
       loadMeals()
     }
-  }, [page, adminPage, siteSettingsLoaded])
+  }, [page, adminPage, siteSettingsLoaded, siteSettings.menu_publish_time, siteSettings.menu_stop_time])
   useEffect(() => {
     let mounted = true
     const loadUserProfile = async () => {
@@ -2271,6 +2274,9 @@ siteSettings={siteSettings}
     onPublishMenuDay={publishMenuDay}
     onUnpublishMenuDay={unpublishMenuDay}
     savingMenuDay={savingMenuDay}
+    siteSettings={siteSettings}
+    siteSettingsSaving={siteSettingsSaving}
+    onSaveSiteSettings={onSaveSiteSettings}
   />
   
 )}
@@ -4634,6 +4640,25 @@ function DeliveryScreen({
 
   useEffect(() => { loadRoute() }, [today, dailyOrders.length, subscriberDailyMeals.length])
 
+  // صاحب المطبخ يشاهد آخر موقع للسائق تلقائياً. السائق نفسه يرسل الموقع من زر التحديث.
+  useEffect(() => {
+    if (isDriver || !route?.driver_id) return undefined
+    let cancelled = false
+    const poll = async () => {
+      const { data } = await supabase
+        .from("driver_locations")
+        .select("latitude, longitude, recorded_at")
+        .eq("driver_id", route.driver_id)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!cancelled && data) setDriverLocation(data)
+    }
+    poll()
+    const timer = window.setInterval(poll, 15000)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [route?.driver_id, isDriver])
+
   const createSmartRoute = async () => {
     const candidates = buildCandidates()
     const withLocation = candidates.filter(x => x.latitude != null && x.longitude != null)
@@ -4711,9 +4736,23 @@ function DeliveryScreen({
   const completed = stops.filter(s => s.status === "delivered")
   const next = pending[0]
   const etaFor = (index) => {
-    let minutes=5
-    for(let i=0;i<=index;i++) minutes += i===0 ? 0 : 8
-    return minutes
+    const ordered = pending
+    const target = ordered[index] || ordered[0]
+    if (!target) return null
+    let from = driverLocation
+    let minutes = 0
+    const speedKmH = 30
+    for (let i = 0; i <= index; i++) {
+      const point = ordered[i]
+      if (from && point?.latitude != null && point?.longitude != null) {
+        const km = haversineKm(from.latitude, from.longitude, point.latitude, point.longitude)
+        if (Number.isFinite(km)) minutes += Math.max(2, Math.round((km / speedKmH) * 60))
+      } else {
+        minutes += 8
+      }
+      from = point
+    }
+    return Math.max(1, minutes)
   }
 
   return <div className="screen delivery-dispatch">
@@ -4725,6 +4764,13 @@ function DeliveryScreen({
       <div><strong>{pending.length}</strong><span>متبقي بالمسار</span></div>
       <div><strong>{next ? `#${next.stop_order}` : "—"}</strong><span>النقطة التالية</span></div>
     </div>
+    {driverLocation && !isDriver && (
+      <div className="delivery-live-card">
+        <strong>📡 موقع السائق الآن</strong>
+        <span>{Number(driverLocation.latitude).toFixed(5)}, {Number(driverLocation.longitude).toFixed(5)}</span>
+        {driverLocation.recorded_at && <small>آخر تحديث: {new Date(driverLocation.recorded_at).toLocaleTimeString("ar-JO", { hour: "2-digit", minute: "2-digit" })}</small>}
+      </div>
+    )}
     <div className="delivery-toolbar">
       <button className="primary" onClick={createSmartRoute} disabled={creatingRoute || loadingRoute}>{creatingRoute ? "جاري ترتيب المسار…" : "🧭 إنشاء / إعادة ترتيب المسار"}</button>
       <button onClick={startLocationTracking} disabled={locating}>{locating ? "جاري تحديد موقعك…" : "📍 تحديث موقعي كسائق"}</button>
