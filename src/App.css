@@ -2885,3 +2885,74 @@ footer.brand-footer,
 .cart-summary strong{font-weight:800}
 @media(max-width:768px){.hero-badges-inline{justify-content:center;gap:7px}.hero-badges-inline span{font-size:12px!important;padding:7px 9px}.subscription-popup-note{font-size:14px}}
 
+
+/* =========================================================
+   CHEF NOOR V1.5 — SITE SETTINGS / TOP SLOGAN
+========================================================= */
+.top-slogan-bar{
+  min-height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:18px;
+  flex-wrap:wrap;
+  padding:7px 16px;
+  background:#183b2a;
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+  letter-spacing:.1px;
+}
+.top-slogan-bar a{color:#f2d28a;text-decoration:none}
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.settings-card{padding:22px}
+.settings-card h3{margin:0 0 10px}
+.settings-card p{line-height:1.8;color:#666}
+.settings-card label{display:block;margin:13px 0 6px;font-weight:800}
+.settings-card input,.settings-card textarea,.settings-card select{width:100%;box-sizing:border-box}
+.settings-card-wide{grid-column:1/-1}
+.settings-note{margin-top:14px;padding:12px;border-radius:12px;background:#f8f5ed;line-height:1.7;font-weight:700}
+.settings-image-row{display:grid;grid-template-columns:170px 1fr 90px;gap:10px;align-items:center;margin:12px 0}
+.settings-image-row label{margin:0}
+.settings-image-row img{width:90px;height:62px;object-fit:cover;border-radius:10px;border:1px solid #ddd}
+.settings-footer-images{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.settings-footer-images .settings-image-row{grid-template-columns:90px 1fr 70px}
+.settings-footer-images .settings-image-row img{width:70px;height:52px}
+.settings-save-bar{position:sticky;bottom:12px;display:flex;justify-content:center;padding:12px;z-index:8}
+.settings-save-bar .main-btn{min-width:280px;box-shadow:0 10px 30px rgba(0,0,0,.14)}
+.daily-date-panel{margin-bottom:22px;padding:22px}
+.daily-date-panel .daily-menu-track{margin-top:18px}
+@media (max-width:800px){
+  .settings-grid{grid-template-columns:1fr}
+  .settings-card-wide{grid-column:auto}
+  .settings-image-row,.settings-footer-images .settings-image-row{grid-template-columns:1fr}
+  .settings-image-row img,.settings-footer-images .settings-image-row img{width:100%;height:150px}
+  .settings-footer-images{grid-template-columns:1fr}
+  .top-slogan-bar{font-size:12px;gap:9px}
+}
+
+.cart-confirm-note{margin:0 0 15px;padding:13px 15px;border-radius:14px;background:#f5f0df;border:1px solid #e6d39a;color:#57451e;font-weight:800;line-height:1.7}
+
+/* Contact & social links */
+.brand-footer-social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.brand-footer-social .contact-link,
+.top-slogan-bar a {
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .2s ease, opacity .2s ease;
+}
+.brand-footer-social .contact-link:hover,
+.top-slogan-bar a:hover {
+  transform: translateY(-1px);
+  opacity: .85;
+}
+
+/* ======================================================
+   DELIVERY DISPATCH V4
+====================================================== */
+.delivery-command-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.delivery-command-bar>div{background:var(--card,#fff);border:1px solid rgba(0,0,0,.07);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:5px}.delivery-command-bar strong{font-size:25px}.delivery-command-bar span{color:#777;font-size:13px}.delivery-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 18px}.delivery-toolbar button{border:1px solid #ddd;background:#fff;border-radius:12px;padding:11px 14px;cursor:pointer}.delivery-toolbar .primary{background:#1e5b43;color:#fff;border-color:#1e5b43}.delivery-toolbar button:disabled{opacity:.55;cursor:not-allowed}.delivery-route-summary{display:flex;justify-content:space-between;align-items:center;background:#f8f5ec;border:1px solid #eadfbe;border-radius:16px;padding:14px 18px;margin-bottom:12px}.delivery-route-summary div{display:flex;gap:12px;align-items:center}.delivery-route-summary span{font-size:12px;padding:5px 9px;border-radius:99px;background:#dff0e6;color:#205c3d}.delivery-route-list{display:flex;flex-direction:column;gap:12px}.delivery-stop{display:grid;grid-template-columns:48px 1fr auto;gap:14px;align-items:center;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:18px;padding:15px;box-shadow:0 5px 20px rgba(0,0,0,.04)}.delivery-stop.is-next{border:2px solid #b99543;box-shadow:0 8px 25px rgba(185,149,67,.15)}.delivery-stop.is-done{opacity:.72}.stop-number{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#1e5b43;color:#fff;font-weight:800}.stop-heading{display:flex;align-items:center;gap:10px}.stop-heading h3{margin:0}.stop-heading span{font-size:12px;background:#f2f2f2;padding:5px 9px;border-radius:99px}.stop-private{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0;color:#555;font-size:13px}.stop-public-eta{font-size:13px;color:#765d24}.stop-actions{display:flex;flex-direction:column;gap:8px;min-width:125px}.stop-actions a,.stop-actions button{border:1px solid #ddd;background:#fff;border-radius:10px;padding:9px;text-align:center;text-decoration:none;cursor:pointer}.stop-actions .success{background:#1e5b43;color:#fff;border-color:#1e5b43}.delivery-privacy-note{margin-top:18px;padding:12px 15px;background:#f5f7f6;border-radius:14px;color:#566;font-size:12px}.alert.error{padding:12px 15px;background:#fff0f0;color:#9d2c2c;border-radius:12px;margin:12px 0}@media(max-width:760px){.delivery-command-bar{grid-template-columns:repeat(2,1fr)}.delivery-stop{grid-template-columns:38px 1fr}.stop-actions{grid-column:2;flex-direction:row;flex-wrap:wrap}.stop-actions>*{flex:1}.delivery-route-summary{flex-direction:column;align-items:flex-start;gap:8px}}

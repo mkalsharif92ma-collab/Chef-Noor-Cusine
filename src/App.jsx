@@ -13,6 +13,59 @@ const plans = [
 ]
 const DAILY_PRICE = 3
 const DAILY_DEFAULT_MEAL_COUNT = 4
+const DEFAULT_SITE_SETTINGS = {
+  slogan: "أكل البيت... بطابع براند عالمي",
+  contact_phone: "",
+  whatsapp_phone: "",
+  instagram_url: "",
+  facebook_url: "",
+  hero_image_url: "",
+  circle_image_url: "",
+  story_image_url: "",
+  cta_image_url: "",
+  footer_meal_images: [],
+  menu_publish_time: "12:00",
+  menu_stop_time: "23:00",
+  daily_delivery_fee: 1,
+  timezone: "Asia/Amman",
+}
+function formatDateLocal(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+function getAmmanNow() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Amman",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date())
+  const get = (type) => parts.find((part) => part.type === type)?.value || "00"
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  }
+}
+function timeToMinutes(value) {
+  const [h, m] = String(value || "00:00").split(":").map(Number)
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
+}
+function isWithinTimeWindow(start, stop, minutes) {
+  const s = timeToMinutes(start)
+  const e = timeToMinutes(stop)
+  if (s === e) return true
+  return s < e ? minutes >= s && minutes <= e : minutes >= s || minutes <= e
+}
+function getNextSubscriberDate(baseDate = new Date()) {
+  const d = new Date(baseDate)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + 1)
+  // الجمعة عطلة: المشترك يختار السبت مباشرة.
+  if (d.getDay() === 5) d.setDate(d.getDate() + 1)
+  return formatDateLocal(d)
+}
 const FOOTER_MEAL_IMAGES = [
   "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&w=1200&q=80",
   "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80",
@@ -408,6 +461,9 @@ const [subscriberLoading, setSubscriberLoading] = useState(false)
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [siteSettings, setSiteSettings] = useState(DEFAULT_SITE_SETTINGS)
+  const [siteSettingsSaving, setSiteSettingsSaving] = useState(false)
+  const [siteSettingsLoaded, setSiteSettingsLoaded] = useState(false)
   useEffect(() => {
   const tracking = new URLSearchParams(window.location.search).get("tracking")
   if (!tracking) return
@@ -564,7 +620,7 @@ const cartItemsTotal = cart.reduce(
   (sum, item) => sum + Number(item.total || 0),
   0
 )
-const cartDeliveryTotal = cart.some((item) => item.kind !== "subscription") ? 1 : 0
+const cartDeliveryTotal = cart.some((item) => item.kind !== "subscription") ? Number(siteSettings.daily_delivery_fee ?? 1) : 0
 const cartSubtotal = cartItemsTotal + cartDeliveryTotal
   /* ======================================================
      DASHBOARD
@@ -588,6 +644,7 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
   const [menuView, setMenuView] = useState("planner")
   const [publishedDailyMenu, setPublishedDailyMenu] = useState(null)
   const [publishedTomorrowMenu, setPublishedTomorrowMenu] = useState(null)
+  const [publishedSubscriberMenu, setPublishedSubscriberMenu] = useState(null)
   const [loadingPublishedMenu, setLoadingPublishedMenu] = useState(false)
   const [loadingDashboard, setLoadingDashboard] =
     useState(false)
@@ -856,8 +913,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
      30-DAY MENU PLANNER
      عند فتح قسم الوجبات نجهز دورة 30 يوم تلقائياً
   ====================================================== */
-  const formatDateLocal = (date) =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   const getMonthMeta = (startDate) => {
     const d = new Date(`${startDate}T00:00:00`)
     return {
@@ -949,7 +1004,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
       const available = freshMeals || []
       setMeals(available)
       const draftRows = []
-      const newlySeededDayIds = new Set()
       let mealCursor = 0
       for (const day of normalizedDays) {
         if (day.is_holiday) continue
@@ -978,7 +1032,6 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
             display_order: slot,
             available: true,
           })
-          newlySeededDayIds.add(day.id)
           slot += 1
         }
       }
@@ -995,15 +1048,9 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
         if (error) throw error
         itemsData = data || []
       }
-      // الأيام الجديدة التي تم تجهيزها تلقائياً بأربع وجبات افتراضية تُنشر مباشرة.
-      // لا نعيد نشر يوم قام المدير بإلغاء نشره عمداً.
-      if (newlySeededDayIds.size) {
-        const { error: publishSeedError } = await supabase
-          .from("daily_menu")
-          .update({ is_published: true })
-          .in("id", Array.from(newlySeededDayIds))
-        if (publishSeedError) throw publishSeedError
-      }
+      // مهم: تجهيز القائمة لا يعني نشرها.
+      // المدير وحده يقرر متى ينشر اليوم، حتى تبقى قائمة الغد مخفية
+      // عن الزوار والمشتركين إلى أن تصبح جاهزة وضمن نافذة العرض.
       setMenuMonth(monthData)
       setMenuDays(normalizedDays.map((day) => ({
         ...day,
@@ -1164,14 +1211,20 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
     try {
       const saved = await saveMenuDay(day)
       if (!saved) return
-      const { error } = await supabase
+      const { data: publishedRow, error } = await supabase
         .from("daily_menu")
         .update({ is_published: true })
         .eq("id", day.id)
+        .select("id, is_published")
+        .single()
       if (error) throw error
+      if (!publishedRow?.is_published) {
+        throw new Error("لم يتم تأكيد حالة النشر من قاعدة البيانات.")
+      }
       setMenuDays((prev) => prev.map((d) =>
         d.id === day.id ? { ...d, is_published: true } : d
       ))
+      alert("تم نشر قائمة هذا اليوم بنجاح.")
     } catch (error) {
       console.error("PUBLISH MENU DAY ERROR:", error)
       alert("تعذر نشر اليوم:\n" + error.message)
@@ -1194,18 +1247,19 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
   const loadPublishedMenu = async () => {
     setLoadingPublishedMenu(true)
     try {
-      const today = new Date()
+      const settings = siteSettings || DEFAULT_SITE_SETTINGS
+      const now = getAmmanNow()
+      const windowOpen = isWithinTimeWindow(
+        settings.menu_publish_time,
+        settings.menu_stop_time,
+        now.minutes
+      )
+      const today = new Date(`${now.date}T00:00:00`)
       const tomorrow = new Date(today)
       tomorrow.setDate(tomorrow.getDate() + 1)
-      // للمشترك: إذا كان اليوم التالي الجمعة، ننتقل إلى السبت
-      const nextSubscriberDay = new Date(tomorrow)
-      if (nextSubscriberDay.getDay() === 5) {
-        nextSubscriberDay.setDate(nextSubscriberDay.getDate() + 1)
-      }
-      const formatDate = (date) =>
-        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
-      const loadOneDay = async (date) => {
-        const dateText = formatDate(date)
+      const subscriberDateText = getNextSubscriberDate(today)
+      const formatDate = (date) => formatDateLocal(date)
+      const loadOneDay = async (dateText) => {
         const { data: dayRows, error: dayError } = await supabase
           .from("daily_menu")
           .select("id, month_id, day_number, menu_date, is_holiday, is_published, notes")
@@ -1230,16 +1284,21 @@ const [subscriberDailyMeals, setSubscriberDailyMeals] = useState([])
           ),
         }
       }
-      const [todayMenu, tomorrowMenu] = await Promise.all([
-        loadOneDay(today),
-        loadOneDay(nextSubscriberDay),
+      const [todayMenu, tomorrowMenu, subscriberMenu] = await Promise.all([
+        loadOneDay(now.date),
+        loadOneDay(formatDate(tomorrow)),
+        loadOneDay(subscriberDateText),
       ])
+      // اليوم يبقى ظاهراً إذا كان منشوراً، أما قائمة الغد واختيار المشترك
+      // فتتبع نافذة النشر/الإيقاف التي يحددها المدير من الإدارة.
       setPublishedDailyMenu(todayMenu)
-      setPublishedTomorrowMenu(tomorrowMenu)
+      setPublishedTomorrowMenu(windowOpen ? tomorrowMenu : null)
+      setPublishedSubscriberMenu(windowOpen ? subscriberMenu : null)
     } catch (error) {
       console.error("PUBLISHED MENU ERROR:", error)
       setPublishedDailyMenu(null)
       setPublishedTomorrowMenu(null)
+      setPublishedSubscriberMenu(null)
     } finally {
       setLoadingPublishedMenu(false)
     }
@@ -1428,8 +1487,97 @@ setSubscriberDailyMeals(
   }
 }
   /* ======================================================
+     SITE SETTINGS
+  ====================================================== */
+  const normalizePhone = (value) => String(value || "").trim()
+  const normalizeWhatsapp = (value) => {
+    let digits = String(value || "").replace(/\D/g, "")
+    if (digits.startsWith("00")) digits = digits.slice(2)
+    if (digits.startsWith("07") && digits.length === 10) digits = `962${digits.slice(1)}`
+    if (digits.startsWith("7") && digits.length === 9) digits = `962${digits}`
+    return digits
+  }
+  const normalizeSocialUrl = (value, platform) => {
+    let url = String(value || "").trim()
+    if (!url) return ""
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`
+    try {
+      const parsed = new URL(url)
+      if (platform === "instagram" && !parsed.hostname.toLowerCase().includes("instagram.com")) return ""
+      if (platform === "facebook" && !parsed.hostname.toLowerCase().includes("facebook.com")) return ""
+      return parsed.toString()
+    } catch {
+      return ""
+    }
+  }
+  const loadSiteSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("site_settings")
+        .select("*")
+        .eq("id", 1)
+        .maybeSingle()
+      if (error) throw error
+      if (data) {
+        setSiteSettings({
+          ...DEFAULT_SITE_SETTINGS,
+          ...data,
+          contact_phone: data.contact_phone || "",
+          whatsapp_phone: data.whatsapp_phone || "",
+          instagram_url: data.instagram_url || "",
+          facebook_url: data.facebook_url || "",
+          footer_meal_images: Array.isArray(data.footer_meal_images) ? data.footer_meal_images : [],
+        })
+      }
+    } catch (error) {
+      console.error("SITE SETTINGS LOAD ERROR:", error)
+    } finally {
+      setSiteSettingsLoaded(true)
+    }
+  }
+  const onSaveSiteSettings = async (form) => {
+    setSiteSettingsSaving(true)
+    try {
+      const footerImages = Array.from({ length: 6 }, (_, index) => String(form.footer_meal_images?.[index] || "").trim())
+      const payload = {
+        id: 1,
+        slogan: String(form.slogan || DEFAULT_SITE_SETTINGS.slogan).trim(),
+        contact_phone: normalizePhone(form.contact_phone),
+        whatsapp_phone: normalizeWhatsapp(form.whatsapp_phone),
+        instagram_url: normalizeSocialUrl(form.instagram_url, "instagram"),
+        facebook_url: normalizeSocialUrl(form.facebook_url, "facebook"),
+        hero_image_url: String(form.hero_image_url || "").trim(),
+        circle_image_url: String(form.circle_image_url || "").trim(),
+        story_image_url: String(form.story_image_url || "").trim(),
+        cta_image_url: String(form.cta_image_url || "").trim(),
+        footer_meal_images: footerImages,
+        menu_publish_time: form.menu_publish_time || DEFAULT_SITE_SETTINGS.menu_publish_time,
+        menu_stop_time: form.menu_stop_time || DEFAULT_SITE_SETTINGS.menu_stop_time,
+        daily_delivery_fee: Math.max(0, Number(form.daily_delivery_fee ?? DEFAULT_SITE_SETTINGS.daily_delivery_fee) || 0),
+        timezone: "Asia/Amman",
+      }
+      const { data, error } = await supabase
+        .from("site_settings")
+        .upsert(payload, { onConflict: "id" })
+        .select("*")
+        .single()
+      if (error) throw error
+      setSiteSettings({ ...DEFAULT_SITE_SETTINGS, ...data, footer_meal_images: Array.isArray(data.footer_meal_images) ? data.footer_meal_images : [] })
+      alert("تم حفظ بيانات الاتصال وروابط التواصل وإعدادات الموقع بنجاح ✅")
+    } catch (error) {
+      console.error("SITE SETTINGS SAVE ERROR:", error)
+      alert(`تعذر حفظ إعدادات الموقع:\n${error.message}`)
+    } finally {
+      setSiteSettingsSaving(false)
+    }
+  }
+
+  /* ======================================================
      EFFECTS
   ====================================================== */
+  useEffect(() => {
+    loadSiteSettings()
+  }, [])
   // تحديث قائمة الوجبات المنشورة تلقائياً حتى تنعكس تعديلات الإدارة على الموقع
   // ورابط المشترك بدون الحاجة لإعادة نشر نسخة من التطبيق.
   useEffect(() => {
@@ -1460,7 +1608,7 @@ setSubscriberDailyMeals(
       loadPublishedMenu()
       loadMeals()
     }
-  }, [page, adminPage])
+  }, [page, adminPage, siteSettingsLoaded])
   useEffect(() => {
     let mounted = true
     const loadUserProfile = async () => {
@@ -1657,16 +1805,15 @@ const generateTrackingToken = () => {
         createdSubscriptions.push(created)
       }
       if (dailyItems.length) {
-        const today = getToday()
         const rows = dailyItems.map((item, index) => ({
           customer_name: customer.name.trim(),
           phone: customer.phone.trim(),
           address: [customer.address.trim(), customer.mapLink.trim() ? `رابط موقع Google Maps: ${customer.mapLink.trim()}` : "", customerNote.trim() ? `ملاحظات: ${customerNote.trim()}` : ""].filter(Boolean).join("\n"),
           meal_name: item.meal_name,
           quantity: Number(item.quantity || 1),
-          order_date: today,
-          delivery_price: index === 0 ? 1 : 0,
-          total_price: Number(item.total || 0) + (index === 0 ? 1 : 0),
+          order_date: item.order_date || getAmmanNow().date,
+          delivery_price: index === 0 ? Number(siteSettings.daily_delivery_fee ?? 1) : 0,
+          total_price: Number(item.total || 0) + (index === 0 ? Number(siteSettings.daily_delivery_fee ?? 1) : 0),
           status: "pending",
           latitude: customer.location.latitude,
           longitude: customer.location.longitude,
@@ -1922,6 +2069,9 @@ const generateTrackingToken = () => {
   const tomorrowPublishedItems = (publishedTomorrowMenu?.items || [])
     .map((item) => item.meals)
     .filter(Boolean)
+  const subscriberPublishedItems = (publishedSubscriberMenu?.items || [])
+    .map((item) => item.meals)
+    .filter(Boolean)
   // في يوم العطلة أو عندما لا تكون قائمة اليوم منشورة،
   // نعرض أقرب قائمة منشورة قادمة حتى لا تبقى الصفحة فارغة.
   const buildPublishedMeals = (primary = [], secondary = []) => {
@@ -1936,30 +2086,35 @@ const generateTrackingToken = () => {
   }
   const publicTodayMeals = buildPublishedMeals(todayPublishedItems, [])
   const publicTomorrowMeals = buildPublishedMeals(tomorrowPublishedItems, [])
+  const publicSubscriberMeals = buildPublishedMeals(subscriberPublishedItems, [])
   const publicTodayMenuDate =
     todayPublishedItems.length > 0
       ? publishedDailyMenu?.menu_date
       : getToday()
   const publicTodayMenuIsFallback = todayPublishedItems.length === 0
-const addToCart = (meal, quantity = 1) => {
+const addToCart = (meal, quantity = 1, orderDate = getAmmanNow().date) => {
   if (!meal) return
-  const price = DAILY_PRICE
+  const price = Number(meal.price || DAILY_PRICE)
+  const safeQuantity = Math.max(1, Number(quantity) || 1)
+  const cartId = `daily-${meal.id}-${orderDate}`
   setCart((currentCart) => {
-    const existing = currentCart.find((item) => String(item.meal_id) === String(meal.id))
+    const existing = currentCart.find((item) => String(item.cart_id) === String(cartId))
     if (existing) {
-      const nextQuantity = Number(existing.quantity || 0) + Number(quantity || 1)
-      return currentCart.map((item) => String(item.meal_id) === String(meal.id)
+      const nextQuantity = Number(existing.quantity || 0) + safeQuantity
+      return currentCart.map((item) => String(item.cart_id) === String(cartId)
         ? { ...item, quantity: nextQuantity, total: nextQuantity * Number(item.price || price) }
         : item)
     }
     return [...currentCart, {
       kind: "daily",
+      cart_id: cartId,
       meal_id: meal.id,
       meal_name: meal.name,
+      order_date: orderDate,
       price,
-      quantity: Number(quantity) || 1,
+      quantity: safeQuantity,
       delivery_price: 0,
-      total: price * (Number(quantity) || 1),
+      total: price * safeQuantity,
       image: meal.image_url || meal.image || mealFallbackImage(0),
     }]
   })
@@ -1998,12 +2153,13 @@ const clearCart = () => {
   profile={profile}
   cartItemsCount={cartItemsCount}
 onOpenCart={() => setCartOpen(true)}
+siteSettings={siteSettings}
 />
 {page === "subscriber" && (
   <SubscriberPage
     subscription={subscriberData}
     availableMeals={publicTodayMeals}
-    tomorrowAvailableMeals={publicTomorrowMeals}
+    tomorrowAvailableMeals={publicSubscriberMeals}
     onClose={() => setPage("home")}
   />
 )}
@@ -2023,6 +2179,7 @@ onOpenCart={() => setCartOpen(true)}
             setPage("daily")
           }
           onAddToCart={addToCart}
+          siteSettings={siteSettings}
         />
       )}
       {/* ==================================================
@@ -2052,13 +2209,14 @@ onOpenCart={() => setCartOpen(true)}
         <DailyPage
         
           meals={publicTodayMeals}
+          tomorrowMeals={publicTomorrowMeals}
           menuDate={publicTodayMenuDate}
+          tomorrowMenuDate={publishedTomorrowMenu?.menu_date || null}
           menuIsFallback={publicTodayMenuIsFallback}
           ordersClosed={false}
-          onOrder={
-            openDailyOrder
-          }
+          onOrder={openDailyOrder}
           onAddToCart={addToCart}
+          deliveryFee={Number(siteSettings.daily_delivery_fee ?? 1)}
         />
       )}
       {/* ==================================================
@@ -2133,7 +2291,18 @@ onOpenCart={() => setCartOpen(true)}
   }
 />
   )}
-      {/* ==================================================
+{page === "delivery" && user && profile?.role === "driver" && (
+  <DeliveryScreen
+    dailyOrders={dailyOrders}
+    subscriberDailyMeals={subscriberDailyMeals}
+    activeSubscriptions={activeSubscriptions}
+    onUpdate={updateDailyOrderStatus}
+    updating={updatingOrder}
+    onRefresh={loadDashboard}
+    profile={profile}
+  />
+)}
+            {/* ==================================================
           MEAL FORM
       ================================================== */}
       {mealFormOpen && (
@@ -2225,17 +2394,18 @@ onOpenCart={() => setCartOpen(true)}
           <div className="brand-footer-identity">
             <span className="brand-footer-handle">@chefnoorcuisine</span>
             <h2>مطبخ شيف نور</h2>
-            <p>أكل البيت... بطابع براند عالمي</p>
+            <p>{siteSettings.slogan || DEFAULT_SITE_SETTINGS.slogan}</p>
           </div>
           <div className="brand-footer-social">
-            <span>Instagram</span>
-            <span>WhatsApp</span>
-            <span>TikTok</span>
+            {siteSettings.instagram_url && <a className="contact-link instagram-link" href={siteSettings.instagram_url} target="_blank" rel="noopener noreferrer" aria-label="Instagram">📸 Instagram</a>}
+            {siteSettings.facebook_url && <a className="contact-link facebook-link" href={siteSettings.facebook_url} target="_blank" rel="noopener noreferrer" aria-label="Facebook">f Facebook</a>}
+            {siteSettings.whatsapp_phone && <a className="contact-link whatsapp-link" href={`https://wa.me/${normalizeWhatsapp(siteSettings.whatsapp_phone)}`} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">💬 WhatsApp</a>}
+            {siteSettings.contact_phone && <a className="contact-link phone-link" href={`tel:${normalizePhone(siteSettings.contact_phone)}`} aria-label="اتصال">📞 {siteSettings.contact_phone}</a>}
           </div>
         </div>
         <div className="brand-footer-grid">
           {Array.from({ length: 6 }).map((_, index) => {
-            const src = brandImages.meals?.[index] || FOOTER_MEAL_IMAGES[index] || mealFallbackImage(index)
+            const src = siteSettings.footer_meal_images?.[index] || brandImages.meals?.[index] || FOOTER_MEAL_IMAGES[index] || mealFallbackImage(index)
             return (
               <img
                 key={`footer-meal-${index}`}
@@ -2333,10 +2503,19 @@ function Header({
   setPage,
   profile,
   cartItemsCount,
-onOpenCart,
+  onOpenCart,
+  siteSettings = DEFAULT_SITE_SETTINGS,
 }) {
   return (
-    <header className="header">
+    <>
+      <div className="top-slogan-bar">
+        <span>{siteSettings.slogan || DEFAULT_SITE_SETTINGS.slogan}</span>
+        {siteSettings.contact_phone && <a href={`tel:${normalizePhone(siteSettings.contact_phone)}`} aria-label="اتصال بمطبخ شيف نور">📞 {siteSettings.contact_phone}</a>}
+        {siteSettings.whatsapp_phone && <a href={`https://wa.me/${normalizeWhatsapp(siteSettings.whatsapp_phone)}`} target="_blank" rel="noopener noreferrer" aria-label="التواصل مع مطبخ شيف نور عبر واتساب">💬 واتساب</a>}
+        {siteSettings.instagram_url && <a href={siteSettings.instagram_url} target="_blank" rel="noopener noreferrer" aria-label="صفحة مطبخ شيف نور على Instagram">📸 Instagram</a>}
+        {siteSettings.facebook_url && <a href={siteSettings.facebook_url} target="_blank" rel="noopener noreferrer" aria-label="صفحة مطبخ شيف نور على Facebook">f Facebook</a>}
+      </div>
+      <header className="header">
       <div className="brand">
         <div className="brand-icon">
   <img
@@ -2423,6 +2602,7 @@ onOpenCart,
 </button>
       </nav>
     </header>
+    </>
   )
 }
 function useInView(threshold = 0.16) {
@@ -2488,6 +2668,7 @@ function HomePage({
   onAddToCart,
   plans = [],
   meals = [],
+  siteSettings = DEFAULT_SITE_SETTINGS,
 }) {
   const visibleMeals = (meals || []).filter(Boolean)
   const featuredPlans = (plans || []).slice(0, 6)
@@ -2496,7 +2677,7 @@ function HomePage({
       <section className="brand-hero">
         <img
           className="brand-hero-photo"
-          src={brandImages.hero}
+          src={siteSettings.hero_image_url || brandImages.hero}
           alt="تصوير طعام من مطبخ شيف نور"
         />
         <div className="brand-hero-overlay">
@@ -2521,7 +2702,7 @@ function HomePage({
           ابدأ اشتراكك
         </button>
         <div className="hero-circle">
-          <img src={brandImages.circle} alt="طبق اليوم" />
+          <img src={siteSettings.circle_image_url || brandImages.circle} alt="طبق اليوم" />
         </div>
       </section>
       <Reveal as="section" className="home-section meals-overlap">
@@ -2695,110 +2876,86 @@ function SubscriptionPeriod({
 ====================================================== */
 function DailyPage({
   onAddToCart,
-  meals,
+  meals = [],
+  tomorrowMeals = [],
   menuDate,
+  tomorrowMenuDate,
   menuIsFallback,
-  ordersClosed,
-  onOrder,
+  deliveryFee = 1,
 }) {
-  const formattedMenuDate = menuDate
-    ? new Date(`${menuDate}T00:00:00`).toLocaleDateString(
-        "ar-JO",
-        {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        }
-      )
+  const formatArabicDate = (date) => date
+    ? new Date(`${date}T00:00:00`).toLocaleDateString("ar-JO", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
     : ""
-  return (
-    
-    <section className="section daily-section">
-      <div className="section-title">
-        <small>
-          للطلب اليومي
-        </small>
-        <h2>
-          🍲 وجبات اليوم
-        </h2>
-        <p>
-          {menuIsFallback
-            ? `القائمة المنشورة القادمة — ${formattedMenuDate}`
-            : formattedMenuDate
-              ? `قائمة ${formattedMenuDate}`
-              : "اختر الوجبة التي ترغب بها."}
-        </p>
-      </div>
-      {meals.length === 0 ? (
-        <div className="empty modern-empty">
-          <div>🍲</div>
-          لا توجد وجبات متاحة
-          اليوم.
-        </div>
-      ) : (
-        <div className="daily-menu-track">
-          {meals.map(
-            (meal, index) => (
-              <div
-                className="daily-meal-card"
-                key={meal.id}
-              >
-                <div className="daily-meal-photo">
-                  <img
-                    src={
-                      meal.image_url ||
-                      mealFallbackImage(index)
-                    }
-                    alt={
-                      meal.name
-                    }
-                  />
+  const renderMeals = (list, orderDate, emptyText) => {
+    if (!list.length) {
+      return <div className="empty modern-empty"><div>🍲</div>{emptyText}</div>
+    }
+    return (
+      <div className="daily-menu-track">
+        {list.map((meal, index) => (
+          <div className="daily-meal-card" key={`${orderDate}-${meal.id}`}>
+            <div className="daily-meal-photo">
+              <img src={meal.image_url || mealFallbackImage(index)} alt={meal.name} />
+            </div>
+            <div className="daily-meal-copy">
+              <div className="customer-head">
+                <div>
+                  <h3>{meal.name}</h3>
+                  <span>{meal.description || "وجبة بيتية طازجة"}</span>
                 </div>
-                <div className="daily-meal-copy">
-                  <div className="customer-head">
-                    <div>
-                      <h3>
-                        {meal.name}
-                      </h3>
-                      <span>
-                        {meal.description ||
-                          "وجبة بيتية طازجة"}
-                      </span>
-                    </div>
-                    <span className="badge-active">
-                      متاحة
-                    </span>
-                  </div>
-                  <div className="customer-info">
-                    <div>
-                      <small>
-                        💰 السعر
-                      </small>
-                      <strong>
-                        {meal.price ||
-                          DAILY_PRICE}{" "}
-                        د.أ
-                      </strong>
-                    </div>
-                  </div>
-                  <button
-                    className="main-btn"
-                    onClick={() => onAddToCart(meal)}
-                  >
-                    أضف للسلة
-                  </button>
+                <span className="badge-active">متاحة</span>
+              </div>
+              <div className="customer-info">
+                <div>
+                  <small>💰 السعر</small>
+                  <strong>{Number(meal.price || DAILY_PRICE).toFixed(2)} د.أ</strong>
                 </div>
               </div>
-            )
-          )}
+              <button className="main-btn" onClick={() => onAddToCart(meal, 1, orderDate)}>
+                أضف للسلة
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <section className="section daily-section">
+      <div className="section-title">
+        <small>للطلب اليومي</small>
+        <h2>🍲 وجبات اليوم والوجبات القادمة</h2>
+        <p>اختر وجبة اليوم أو جهّز طلبك للغد، ثم أكمل بياناتك من السلة.</p>
+      </div>
+
+      <div className="modern-box daily-date-panel">
+        <div className="box-title">
+          <div><span>☀️</span><h3>وجبات اليوم</h3></div>
+          <b className="status-online">{menuDate ? formatArabicDate(menuDate) : "غير منشورة"}</b>
         </div>
-      )}
+        {renderMeals(meals, menuDate || getAmmanNow().date, "لا توجد وجبات منشورة لليوم حالياً.")}
+      </div>
+
+      <div className="modern-box daily-date-panel">
+        <div className="box-title">
+          <div><span>📅</span><h3>وجبات الغد</h3></div>
+          <b className={tomorrowMeals.length ? "status-online" : "badge-paused"}>
+            {tomorrowMenuDate ? formatArabicDate(tomorrowMenuDate) : "غير منشورة بعد"}
+          </b>
+        </div>
+        {renderMeals(tomorrowMeals, tomorrowMenuDate || "", "وجبات الغد لم تُنشر بعد. سيتم عرضها تلقائياً بعد نشرها من الإدارة وضمن وقت النشر المحدد.")}
+      </div>
+
       <div className="closing">
         <span>🟢</span>
         <div>
-          <strong>الطلبات مفتوحة طوال اليوم</strong>
-          <p>يمكنك الإضافة إلى السلة وتأكيد طلبك في أي وقت.</p>
+          <strong>أضف إلى السلة ثم أكمل الطلب</strong>
+          <p>توصيل الوجبات اليومية: {Number(deliveryFee).toFixed(2)} د.أ لكل طلب.</p>
         </div>
       </div>
     </section>
@@ -2856,6 +3013,97 @@ function AdminDailyMenuScreen({ dailyMenu, loading, onRefresh }) {
 /* ======================================================
    ADMIN
 ====================================================== */
+
+function SiteSettingsScreen({ settings = DEFAULT_SITE_SETTINGS, saving, onSave }) {
+  const [form, setForm] = useState({
+    ...DEFAULT_SITE_SETTINGS,
+    ...settings,
+    footer_meal_images: Array.isArray(settings.footer_meal_images) ? [...settings.footer_meal_images] : [],
+  })
+  useEffect(() => {
+    setForm({
+      ...DEFAULT_SITE_SETTINGS,
+      ...settings,
+      footer_meal_images: Array.isArray(settings.footer_meal_images) ? [...settings.footer_meal_images] : [],
+    })
+  }, [settings])
+  const change = (field, value) => setForm((old) => ({ ...old, [field]: value }))
+  const changeFooterImage = (index, value) => {
+    const images = [...(form.footer_meal_images || [])]
+    images[index] = value
+    setForm((old) => ({ ...old, footer_meal_images: images }))
+  }
+  return (
+    <div className="screen">
+      <ScreenHeader icon="⚙️" title="إعدادات الموقع" subtitle="تحكم كامل بالمعلومات والصور وروابط التواصل ووقت نشر الوجبات." />
+      <div className="settings-grid">
+        <div className="modern-box settings-card">
+          <h3>📞 بيانات التواصل</h3>
+          <label>رقم الاتصال</label>
+          <input value={form.contact_phone || ""} onChange={(e) => change("contact_phone", e.target.value)} placeholder="07xxxxxxxx" />
+          <label>رقم WhatsApp</label>
+          <input value={form.whatsapp_phone || ""} onChange={(e) => change("whatsapp_phone", e.target.value)} placeholder="9627xxxxxxxx" />
+          <small>اكتب رقم واتساب بصيغة دولية، مثال: 9627xxxxxxxx</small>
+          <label>رابط Instagram</label>
+          <input type="url" value={form.instagram_url || ""} onChange={(e) => change("instagram_url", e.target.value)} placeholder="https://instagram.com/..." />
+          <label>رابط Facebook</label>
+          <input type="url" value={form.facebook_url || ""} onChange={(e) => change("facebook_url", e.target.value)} placeholder="https://facebook.com/..." />
+          <label>شعار/عبارة المطبخ</label>
+          <input value={form.slogan || ""} onChange={(e) => change("slogan", e.target.value)} placeholder="أكل البيت... بطابع براند عالمي" />
+        </div>
+
+        <div className="modern-box settings-card">
+          <h3>🕐 وقت عرض القوائم</h3>
+          <p>المشترك يرى قائمة يوم العمل القادم فقط بعد نشرها من الإدارة وضمن هذه النافذة. يوم الجمعة يتجاوز تلقائياً إلى السبت.</p>
+          <label>وقت بدء عرض قائمة الغد</label>
+          <input type="time" value={form.menu_publish_time || "12:00"} onChange={(e) => change("menu_publish_time", e.target.value)} />
+          <label>وقت إيقاف العرض/الاختيار</label>
+          <input type="time" value={form.menu_stop_time || "23:00"} onChange={(e) => change("menu_stop_time", e.target.value)} />
+          <label>رسوم توصيل الوجبات اليومية</label>
+          <input type="number" min="0" step="0.25" value={form.daily_delivery_fee ?? 1} onChange={(e) => change("daily_delivery_fee", e.target.value)} />
+          <div className="settings-note">الاشتراكات: التوصيل مشمول. الوجبات اليومية: الرسوم تُضاف مرة واحدة على الطلب.</div>
+        </div>
+
+        <div className="modern-box settings-card settings-card-wide">
+          <h3>🖼️ صور واجهة الموقع</h3>
+          <p>يمكنك تغيير الصور من الإدارة بمجرد وضع رابط الصورة وحفظ الإعدادات.</p>
+          {[
+            ["hero_image_url", "الصورة الرئيسية"],
+            ["circle_image_url", "الصورة الدائرية"],
+            ["story_image_url", "صورة قسم القصة"],
+            ["cta_image_url", "صورة القسم الأخير"],
+          ].map(([field, label]) => (
+            <div className="settings-image-row" key={field}>
+              <label>{label}</label>
+              <input type="url" value={form[field] || ""} onChange={(e) => change(field, e.target.value)} placeholder="https://..." />
+              {form[field] && <img src={form[field]} alt={label} />}
+            </div>
+          ))}
+        </div>
+
+        <div className="modern-box settings-card settings-card-wide">
+          <h3>🍽️ الصور الست الأخيرة</h3>
+          <p>هذه الصور تظهر في أسفل الصفحة. الوجبات اليومية نفسها تستخدم صورة الوجبة من قسم «الوجبات».</p>
+          <div className="settings-footer-images">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="settings-image-row">
+                <label>الصورة {index + 1}</label>
+                <input type="url" value={form.footer_meal_images?.[index] || ""} onChange={(e) => changeFooterImage(index, e.target.value)} placeholder="https://..." />
+                {form.footer_meal_images?.[index] && <img src={form.footer_meal_images[index]} alt={`صورة ${index + 1}`} />}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="settings-save-bar">
+        <button className="main-btn" disabled={saving} onClick={() => onSave(form)}>
+          {saving ? "جاري الحفظ..." : "💾 حفظ كل إعدادات الموقع"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AdminPage({
   meals,
   loadingMeals,
@@ -2897,6 +3145,9 @@ function AdminPage({
   onPublishMenuDay,
   onUnpublishMenuDay,
   savingMenuDay,
+  siteSettings,
+  siteSettingsSaving,
+  onSaveSiteSettings,
 }) {
   return (
     <section className="admin-dashboard">
@@ -3013,7 +3264,21 @@ function AdminPage({
           <span>🛍️</span>
           <small>الطلبات</small>
         </button>
+        <button
+          className={adminPage === "settings" ? "admin-menu-active" : ""}
+          onClick={() => setAdminPage("settings")}
+        >
+          <span>⚙️</span>
+          <small>إعدادات الموقع</small>
+        </button>
       </div>
+      {adminPage === "settings" && (
+        <SiteSettingsScreen
+          settings={siteSettings}
+          saving={siteSettingsSaving}
+          onSave={onSaveSiteSettings}
+        />
+      )}
       {/* =========================
           OVERVIEW
       ========================= */}
@@ -3122,7 +3387,8 @@ function AdminPage({
   updating={
     updatingOrder
   }
-  
+  profile={profile}
+  onRefresh={loadDashboard}
 />
       )}
       {/* =========================
@@ -4298,498 +4564,188 @@ function KitchenScreen({
   )
 }
 /* ======================================================
-   DELIVERY
+   DELIVERY DISPATCH
 ====================================================== */
 function DeliveryScreen({
-  dailyOrders,
+  dailyOrders = [],
   subscriberDailyMeals = [],
   activeSubscriptions = [],
   onUpdate,
   updating,
   onRefresh,
+  profile = null,
 }) {
   const today = getToday()
-  /* ======================================================
-     الطلبات اليومية العادية
-  ====================================================== */
-  const deliveryOrders =
-    dailyOrders.filter(
-      (order) =>
-        order.status !== "cancelled" &&
-        order.status !== "delivered"
-    )
-  /* ======================================================
-     تجميع وجبات المشتركين حسب المشترك
-  ====================================================== */
-  const subscriberDeliveryMap =
-    subscriberDailyMeals.reduce(
-      (result, item) => {
-        const subscription =
-          activeSubscriptions.find(
-            (sub) =>
-              Number(sub.id) ===
-              Number(item.subscription_id)
-          )
-        if (!subscription) {
-          return result
-        }
-        const key =
-          subscription.id
-        if (!result[key]) {
-          result[key] = {
-            subscription,
-            meals: [],
-            totalMeals: 0,
-            deliveryStatus:
-              item.delivery_status ||
-              "pending",
-          }
-        }
-        result[key].meals.push(item)
-        result[key].totalMeals +=
-          Number(item.quantity || 0)
-        /*
-         * إذا كانت أي وجبة ما زالت في حالة
-         * أبكر من الحالة الحالية، نحافظ على
-         * الحالة المناسبة.
-         */
-        const statusOrder = {
-          pending: 1,
-          confirmed: 2,
-          preparing: 3,
-          delivered: 4,
-        }
-        const currentStatus =
-          result[key].deliveryStatus
-        const itemStatus =
-          item.delivery_status ||
-          "pending"
-        if (
-          statusOrder[itemStatus] >
-          statusOrder[currentStatus]
-        ) {
-          result[key].deliveryStatus =
-            itemStatus
-        }
-        return result
-      },
-      {}
-    )
-  const subscriberDeliveries =
-    Object.values(
-      subscriberDeliveryMap
-    )
-  /* ======================================================
-     إجمالي طلبات التوصيل
-  ====================================================== */
-  const totalDeliveryCount =
-    deliveryOrders.length +
-    subscriberDeliveries.length
-  /* ======================================================
-     تحديث حالة توصيل المشترك
-  ====================================================== */
-  const updateSubscriberStatus =
-    async (
-      subscriptionId,
-      status
-    ) => {
+  const [route, setRoute] = useState(null)
+  const [stops, setStops] = useState([])
+  const [loadingRoute, setLoadingRoute] = useState(false)
+  const [creatingRoute, setCreatingRoute] = useState(false)
+  const [routeError, setRouteError] = useState("")
+  const [driverLocation, setDriverLocation] = useState(null)
+  const [locating, setLocating] = useState(false)
+  const isDriver = profile?.role === "driver"
+
+  const haversineKm = (aLat, aLng, bLat, bLng) => {
+    if ([aLat,aLng,bLat,bLng].some((v) => v == null || Number.isNaN(Number(v)))) return Infinity
+    const R = 6371
+    const dLat = (Number(bLat)-Number(aLat))*Math.PI/180
+    const dLng = (Number(bLng)-Number(aLng))*Math.PI/180
+    const x = Math.sin(dLat/2)**2 + Math.cos(Number(aLat)*Math.PI/180)*Math.cos(Number(bLat)*Math.PI/180)*Math.sin(dLng/2)**2
+    return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x))
+  }
+
+  const googleMapsUrl = (items) => {
+    const coords = items.filter(x => x.latitude != null && x.longitude != null).map(x => `${x.latitude},${x.longitude}`)
+    if (!coords.length) return "https://www.google.com/maps"
+    const destination = coords[coords.length - 1]
+    const waypoints = coords.slice(0, -1).join("|")
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}${waypoints ? `&waypoints=${encodeURIComponent(waypoints)}` : ""}&travelmode=driving`
+  }
+
+  const buildCandidates = () => {
+    const subscriberMap = new Map()
+    subscriberDailyMeals.forEach(item => {
+      const sub = activeSubscriptions.find(x => Number(x.id) === Number(item.subscription_id))
+      if (!sub || sub.status === "cancelled") return
+      if (!subscriberMap.has(sub.id)) subscriberMap.set(sub.id, { type:"subscription", reference_id:sub.id, customer_name:sub.customer_name || "مشترك", phone:sub.phone || "", address:sub.address || "", latitude:sub.latitude, longitude:sub.longitude, status:item.delivery_status || "pending", meals:[] })
+      subscriberMap.get(sub.id).meals.push(`${item.meal_name || "وجبة"} × ${item.quantity || 1}`)
+    })
+    const subscribers = [...subscriberMap.values()].filter(x => x.status !== "delivered")
+    const orders = dailyOrders.filter(o => !["cancelled","delivered"].includes(o.status)).map(o => ({
+      type:"order", reference_id:o.id, customer_name:o.customer_name || "طلب يومي", phone:o.phone || "", address:o.address || "", latitude:o.latitude, longitude:o.longitude, status:o.status || "pending", meals:[`${o.meal_name || "وجبة"} × ${o.quantity || 1}`]
+    }))
+    return [...subscribers, ...orders]
+  }
+
+  const loadRoute = async () => {
+    setLoadingRoute(true); setRouteError("")
+    try {
+      const { data:r, error:re } = await supabase.from("delivery_routes").select("*").eq("route_date", today).maybeSingle()
+      if (re) throw re
+      if (!r) { setRoute(null); setStops([]); return }
+      const { data:s, error:se } = await supabase.from("delivery_stops").select("*").eq("route_id", r.id).order("stop_order", { ascending:true })
+      if (se) throw se
+      setRoute(r); setStops(s || [])
+    } catch (e) {
+      console.error("DELIVERY ROUTE LOAD", e)
+      setRouteError("تعذر تحميل مسار التوصيل. تأكد من تشغيل SQL الخاص بنظام التوصيل.")
+    } finally { setLoadingRoute(false) }
+  }
+
+  useEffect(() => { loadRoute() }, [today, dailyOrders.length, subscriberDailyMeals.length])
+
+  const createSmartRoute = async () => {
+    const candidates = buildCandidates()
+    const withLocation = candidates.filter(x => x.latitude != null && x.longitude != null)
+    if (!withLocation.length) { alert("لا يوجد أي عميل لديه موقع GPS محفوظ. اطلب من العملاء تحديد الموقع عند تأكيد الطلب."); return }
+    setCreatingRoute(true); setRouteError("")
+    try {
+      const origin = driverLocation || null
+      let ordered = [...withLocation]
+      let googleOptimized = false
       try {
-        const {
-          error,
-        } = await supabase
-          .from(
-            "subscription_daily_meals"
-          )
-          .update({
-            delivery_status:
-              status,
-          })
-          .eq(
-            "subscription_id",
-            subscriptionId
-          )
-          .eq(
-            "meal_date",
-            today
-          )
-        if (error) {
-          console.error(
-            "SUBSCRIBER DELIVERY UPDATE ERROR:",
-            error
-          )
-          alert(
-            "حدث خطأ أثناء تحديث حالة التوصيل."
-          )
-          return
+        const { data:googleData, error:googleError } = await supabase.functions.invoke("optimize-delivery-route", { body:{ origin, stops:withLocation } })
+        if (!googleError && Array.isArray(googleData?.stops) && googleData.stops.length === withLocation.length) {
+          ordered = googleData.stops; googleOptimized = true
         }
-        /*
-         * تحديث البيانات في الشاشة
-         * إذا كان onUpdate موجوداً
-         */
-        if (onRefresh) {
-  await onRefresh()
-}
-        /*
-         * تحديث الصفحة/البيانات بعد نجاح العملية
-         */
-        
-      } catch (error) {
-        console.error(
-          "SUBSCRIBER DELIVERY ERROR:",
-          error
-        )
-        alert(
-          "حدث خطأ أثناء تحديث حالة التوصيل."
-        )
+      } catch (_) { /* fallback below */ }
+      if (!googleOptimized) {
+        if (origin) {
+          const result=[]; let current=origin; let pool=[...ordered]
+          while(pool.length){ pool.sort((a,b)=>haversineKm(current.latitude,current.longitude,a.latitude,a.longitude)-haversineKm(current.latitude,current.longitude,b.latitude,b.longitude)); const next=pool.shift(); result.push(next); current=next }
+          ordered = result
+        } else {
+          ordered.sort((a,b) => Number(a.longitude)-Number(b.longitude) || Number(a.latitude)-Number(b.latitude))
+        }
       }
-    }
-  return (
-    <div className="screen">
-      <ScreenHeader
-        icon="🚚"
-        title="شاشة التوصيل"
-        subtitle="متابعة جميع الطلبات المطلوب توصيلها اليوم"
-        count={
-          totalDeliveryCount
-        }
-      />
-      {/* ==================================================
-          إحصائيات التوصيل
-      ================================================== */}
-      <div className="kitchen-stats">
-        <div>
-          <span>👥</span>
-          <small>توصيلات المشتركين</small>
-          <strong>
-            {subscriberDeliveries.length}
-          </strong>
-        </div>
-        <div>
-          <span>🛍️</span>
-          <small>الطلبات اليومية</small>
-          <strong>
-            {deliveryOrders.length}
-          </strong>
-        </div>
-        <div>
-          <span>🍲</span>
-          <small>وجبات المشتركين</small>
-          <strong>
-            {subscriberDeliveries.reduce(
-              (
-                total,
-                item
-              ) =>
-                total +
-                item.totalMeals,
-              0
-            )}
-          </strong>
-        </div>
-        <div>
-          <span>🚚</span>
-          <small>إجمالي التوصيلات</small>
-          <strong>
-            {totalDeliveryCount}
-          </strong>
-        </div>
-      </div>
-      {/* ==================================================
-          لا يوجد أي طلب
-      ================================================== */}
-      {totalDeliveryCount === 0 ? (
-        <div className="empty modern-empty">
-          <div>🚚</div>
-          لا توجد طلبات جاهزة
-          للتوصيل اليوم.
-        </div>
-      ) : (
-        <div className="delivery-grid">
-          {/* ==================================================
-              توصيلات المشتركين
-          ================================================== */}
-          {subscriberDeliveries.map(
-            ({
-              subscription,
-              meals,
-              totalMeals,
-              deliveryStatus,
-            }) => (
-              <div
-                className="delivery-card"
-                key={`subscription-${subscription.id}`}
-              >
-                <div className="delivery-top">
-                  <div className="delivery-number">
-                    مشترك
-                  </div>
-                  <OrderStatus
-                    status={
-                      deliveryStatus
-                    }
-                  />
-                </div>
-                <h3>
-                  {
-                    subscription.customer_name
-                  }
-                </h3>
-                <div className="delivery-info">
-                  <p>
-                    📱{" "}
-                    <strong>
-                      {
-                        subscription.phone ||
-                        "-"
-                      }
-                    </strong>
-                  </p>
-                  <p>
-                    📍{" "}
-                    <strong>
-                      {
-                        subscription.address ||
-                        "-"
-                      }
-                    </strong>
-                  </p>
-                  <p>
-                    🍲{" "}
-                    <strong>
-                      {meals.map(
-                        (
-                          meal,
-                          index
-                        ) => (
-                          <span
-                            key={meal.id}
-                          >
-                            {index > 0 &&
-                              " • "}
-                            {
-                              meal.meal_name
-                            }
-                            {" × "}
-                            {
-                              meal.quantity
-                            }
-                          </span>
-                        )
-                      )}
-                    </strong>
-                  </p>
-                  <p>
-                    🔢{" "}
-                    <strong>
-                      {totalMeals} وجبة
-                    </strong>
-                  </p>
-                  <p>
-                    📅{" "}
-                    <strong>
-                      {today}
-                    </strong>
-                  </p>
-                  <p>
-                    🏷️{" "}
-                    <strong>
-                      اشتراك{" "}
-                      {
-                        subscription.plan_name ||
-                        ""
-                      }
-                    </strong>
-                  </p>
-                </div>
-                {/* ==========================================
-                    أزرار حالة توصيل المشترك
-                ========================================== */}
-                <div className="delivery-actions">
-                  {deliveryStatus ===
-                    "pending" && (
-                    <button
-                      onClick={() =>
-                        updateSubscriberStatus(
-                          subscription.id,
-                          "confirmed"
-                        )
-                      }
-                    >
-                      ✅ تأكيد
-                    </button>
-                  )}
-                  {deliveryStatus ===
-                    "confirmed" && (
-                    <button
-                      onClick={() =>
-                        updateSubscriberStatus(
-                          subscription.id,
-                          "preparing"
-                        )
-                      }
-                    >
-                      🍳 قيد التجهيز
-                    </button>
-                  )}
-                  {deliveryStatus ===
-                    "preparing" && (
-                    <button
-                      onClick={() =>
-                        updateSubscriberStatus(
-                          subscription.id,
-                          "delivered"
-                        )
-                      }
-                    >
-                      🚚 تم التوصيل
-                    </button>
-                  )}
-                  {deliveryStatus ===
-                    "delivered" && (
-                    <div className="empty">
-                      ✅ تم التوصيل
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          )}
-          {/* ==================================================
-              الطلبات اليومية العادية
-          ================================================== */}
-          {deliveryOrders.map(
-            (order) => (
-              <div
-                className="delivery-card"
-                key={`daily-${order.id}`}
-              >
-                <div className="delivery-top">
-                  <div className="delivery-number">
-                    #
-                    {String(
-                      order.id
-                    ).slice(
-                      0,
-                      5
-                    )}
-                  </div>
-                  <OrderStatus
-                    status={
-                      order.status
-                    }
-                  />
-                </div>
-                <h3>
-                  {
-                    order.customer_name
-                  }
-                </h3>
-                <div className="delivery-info">
-                  <p>
-                    📱{" "}
-                    <strong>
-                      {
-                        order.phone
-                      }
-                    </strong>
-                  </p>
-                  <p>
-                    📍{" "}
-                    <strong>
-                      {
-                        order.address ||
-                        "-"
-                      }
-                    </strong>
-                  </p>
-                  <p>
-                    🍲{" "}
-                    <strong>
-                      {
-                        order.meal_name
-                      }
-                    </strong>
-                  </p>
-                  <p>
-                    🔢{" "}
-                    <strong>
-                      {
-                        order.quantity
-                      }{" "}
-                      وجبة
-                    </strong>
-                  </p>
-                  <p>
-                    💰{" "}
-                    <strong>
-                      {
-                        order.total_price ||
-                        0
-                      }{" "}
-                      د.أ
-                    </strong>
-                  </p>
-                </div>
-                <div className="delivery-actions">
-                  {order.status ===
-                    "pending" && (
-                    <button
-                      onClick={() =>
-                        onUpdate(
-                          order.id,
-                          "confirmed"
-                        )
-                      }
-                      disabled={
-                        updating ===
-                        order.id
-                      }
-                    >
-                      ✅ تأكيد
-                    </button>
-                  )}
-                  {order.status ===
-                    "confirmed" && (
-                    <button
-                      onClick={() =>
-                        onUpdate(
-                          order.id,
-                          "preparing"
-                        )
-                      }
-                      disabled={
-                        updating ===
-                        order.id
-                      }
-                    >
-                      🍳 قيد التجهيز
-                    </button>
-                  )}
-                  {order.status ===
-                    "preparing" && (
-                    <button
-                      onClick={() =>
-                        onUpdate(
-                          order.id,
-                          "delivered"
-                        )
-                      }
-                      disabled={
-                        updating ===
-                        order.id
-                      }
-                    >
-                      🚚 تم التوصيل
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          )}
-        </div>
-      )}
+      const payload = { route_date:today, status:"active", driver_id:profile?.id || null, total_stops:ordered.length, started_at:null, completed_at:null }
+      if (route?.id) {
+        const { error } = await supabase.from("delivery_routes").update(payload).eq("id", route.id)
+        if (error) throw error
+        await supabase.from("delivery_stops").delete().eq("route_id", route.id)
+      } else {
+        const { data, error } = await supabase.from("delivery_routes").insert(payload).select().single()
+        if (error) throw error
+        setRoute(data)
+      }
+      const routeId = route?.id || (await supabase.from("delivery_routes").select("id").eq("route_date",today).single()).data?.id
+      if (!routeId) throw new Error("لم يتم إنشاء مسار")
+      const rows = ordered.map((x,i)=>({ route_id:routeId, stop_order:i+1, source_type:x.type, source_id:x.reference_id, customer_name:x.customer_name, phone:x.phone, address:x.address, latitude:x.latitude, longitude:x.longitude, status:x.status === "preparing" ? "ready" : "pending", eta_minutes:null, arrived_at:null, delivered_at:null }))
+      const { error:ie } = await supabase.from("delivery_stops").insert(rows)
+      if (ie) throw ie
+      await loadRoute()
+    } catch(e) { console.error(e); setRouteError(e.message || "تعذر إنشاء المسار") }
+    finally { setCreatingRoute(false) }
+  }
+
+  const updateStop = async (stop, status) => {
+    const patch = { status }
+    if (status === "en_route" && !route?.started_at) patch.started_at = new Date().toISOString()
+    if (status === "delivered") patch.delivered_at = new Date().toISOString()
+    const { error } = await supabase.from("delivery_stops").update(patch).eq("id", stop.id)
+    if (error) { alert("تعذر تحديث التوصيلة: " + error.message); return }
+    if (stop.source_type === "order") await onUpdate?.(stop.source_id, status === "delivered" ? "delivered" : status === "en_route" ? "preparing" : "confirmed")
+    else if (stop.source_type === "subscription") await supabase.from("subscription_daily_meals").update({ delivery_status: status === "delivered" ? "delivered" : status === "en_route" ? "preparing" : "confirmed" }).eq("subscription_id", stop.source_id).eq("meal_date", today)
+    await loadRoute(); await onRefresh?.()
+  }
+
+  const shareNext = () => {
+    const next = stops.find(s => !["delivered","cancelled"].includes(s.status))
+    if (!next) return
+    window.open(googleMapsUrl([{latitude:driverLocation?.latitude,longitude:driverLocation?.longitude}, next]), "_blank", "noopener,noreferrer")
+  }
+
+  const startLocationTracking = () => {
+    if (!navigator.geolocation) { alert("الجهاز لا يدعم تحديد الموقع."); return }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const loc={latitude:pos.coords.latitude,longitude:pos.coords.longitude}
+      setDriverLocation(loc)
+      if (profile?.id) await supabase.from("driver_locations").insert({ driver_id:profile.id, latitude:loc.latitude, longitude:loc.longitude, recorded_at:new Date().toISOString() })
+      setLocating(false)
+    }, () => { setLocating(false); alert("اسمح للموقع بالوصول إلى GPS ثم أعد المحاولة.") }, {enableHighAccuracy:true, maximumAge:10000, timeout:10000})
+  }
+
+  const candidates = buildCandidates()
+  const pending = stops.filter(s => !["delivered","cancelled"].includes(s.status))
+  const completed = stops.filter(s => s.status === "delivered")
+  const next = pending[0]
+  const etaFor = (index) => {
+    let minutes=5
+    for(let i=0;i<=index;i++) minutes += i===0 ? 0 : 8
+    return minutes
+  }
+
+  return <div className="screen delivery-dispatch">
+    <ScreenHeader icon="🚚" title="مركز التوصيل" subtitle={isDriver ? "مسارك اليوم — أنجز كل نقطة ثم انتقل للتالية" : "ترتيب التوصيلات، متابعة السائق، والوقت المتوقع للوصول"} count={pending.length} />
+    {routeError && <div className="alert error">{routeError}</div>}
+    <div className="delivery-command-bar">
+      <div><strong>{candidates.length}</strong><span>طلبات تحتاج توصيل</span></div>
+      <div><strong>{completed.length}</strong><span>تم التسليم</span></div>
+      <div><strong>{pending.length}</strong><span>متبقي بالمسار</span></div>
+      <div><strong>{next ? `#${next.stop_order}` : "—"}</strong><span>النقطة التالية</span></div>
     </div>
-  )
+    <div className="delivery-toolbar">
+      <button className="primary" onClick={createSmartRoute} disabled={creatingRoute || loadingRoute}>{creatingRoute ? "جاري ترتيب المسار…" : "🧭 إنشاء / إعادة ترتيب المسار"}</button>
+      <button onClick={startLocationTracking} disabled={locating}>{locating ? "جاري تحديد موقعك…" : "📍 تحديث موقعي كسائق"}</button>
+      {next && <button onClick={shareNext}>🗺️ افتح التوصيلة التالية في Google Maps</button>}
+      {route && <button onClick={() => window.open(googleMapsUrl(stops), "_blank", "noopener,noreferrer")}>🗺️ عرض المسار الكامل</button>}
+      <button onClick={loadRoute}>↻ تحديث</button>
+    </div>
+    {route && <div className="delivery-route-summary"><div><b>مسار {today}</b><span>{route.status === "active" ? "نشط" : route.status}</span></div><div>{stops.length} نقاط · {route.route_source === "google" ? "Google Maps" : "ترتيب ذكي"}</div></div>}
+    {!route ? <div className="empty modern-empty"><div>🧭</div><b>لم يتم إنشاء مسار اليوم بعد</b><p>اضغط «إنشاء / إعادة ترتيب المسار» ليتم ترتيب العملاء الذين لديهم GPS، ثم استخدم Google Maps للملاحة.</p></div> :
+      <div className="delivery-route-list">{stops.map((stop,index) => {
+        const isNext = stop.id === next?.id
+        const statusLabel = stop.status === "delivered" ? "تم التسليم" : stop.status === "en_route" ? "في الطريق" : stop.status === "ready" ? "جاهز" : "بانتظار الانطلاق"
+        const maps = stop.latitude != null ? `https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}&travelmode=driving` : null
+        return <div className={`delivery-stop ${isNext ? "is-next" : ""} ${stop.status === "delivered" ? "is-done" : ""}`} key={stop.id}>
+          <div className="stop-number">{stop.stop_order}</div>
+          <div className="stop-main"><div className="stop-heading"><h3>{isNext ? "التوصيلة التالية" : `توصيلة ${stop.stop_order}`}</h3><span>{statusLabel}</span></div><div className="stop-private"><b>{stop.customer_name || "عميل"}</b><span>📍 {stop.address || "الموقع محفوظ GPS"}</span>{stop.phone && <span>📱 {stop.phone}</span>}</div><div className="stop-public-eta">الوقت المتوقع: <b>{stop.status === "delivered" ? "تم الوصول" : `حوالي ${etaFor(index)} دقيقة`}</b></div></div>
+          <div className="stop-actions">{maps && <a href={maps} target="_blank" rel="noreferrer">🗺️ الخريطة</a>}{stop.status !== "delivered" && <>{stop.status !== "en_route" && <button onClick={() => updateStop(stop,"en_route")}>{isNext ? "🚚 ابدأ التوصيل" : "بدء"}</button>}<button className="success" onClick={() => updateStop(stop,"delivered")}>✅ تم التسليم</button></>}</div>
+        </div>
+      })}</div>}
+    <div className="delivery-privacy-note">🔒 معلومات الاسم والعنوان ورقم الهاتف تظهر فقط للمستخدم المصرح له بالتوصيل. صفحة تتبع العميل يمكن أن تعرض حالة التوصيل والوقت المتوقع وموقع السائق فقط.</div>
+  </div>
 }
 /* ======================================================
    ORDERS
@@ -5472,6 +5428,11 @@ function CartPopup({
             <p>{cart.length ? `${cart.length} عنصر في السلة` : "السلة فارغة"}</p>
           </div>
         </div>
+        {cart.length > 0 && (
+          <div className="cart-confirm-note">
+            ✨ تم حفظ اختيارك في السلة. يرجى تأكيد الطلب من سلة مشترياتك لإرسال بياناتك إلى مطبخ شيف نور.
+          </div>
+        )}
         {cart.length === 0 ? (
           <div className="empty-cart">
             <div>🛒</div>
@@ -5497,7 +5458,10 @@ function CartPopup({
                           {item.note && <small>📝 {item.note}</small>}
                         </>
                       ) : (
-                        <span>{Number(item.price).toFixed(2)} د.أ / وجبة — التوصيل غير شامل</span>
+                        <>
+                          <span>{Number(item.price).toFixed(2)} د.أ / وجبة — التوصيل غير شامل</span>
+                          {item.order_date && <small>📅 موعد الطلب: {new Date(`${item.order_date}T00:00:00`).toLocaleDateString("ar-JO", { weekday: "long", day: "numeric", month: "long" })}</small>}
+                        </>
                       )}
                       <strong>{Number(item.total).toFixed(2)} د.أ</strong>
                     </div>
